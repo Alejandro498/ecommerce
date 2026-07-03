@@ -1,0 +1,47 @@
+.rate > label:before,
+.rate > label:after {
+  content: none !important;
+  display: none !important;
+}
+
+.rate > input {
+  display: none;
+}
+
+.rate {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  border: 0;
+}
+
+.rate > label {
+  cursor: pointer;
+  margin: 0;
+  padding: 0 0.1rem;
+}
+
+.rate > label i {
+  font-size: 1.2rem;
+}
+
+.rating-star i {
+  color: #ffb503 !important;
+}
+
+ul.thumb {
+  margin: 0 auto;
+  padding: 0;
+  float: left;
+}
+
+ul.thumb li {
+  list-style: none;
+  margin: 10px;
+}
+
+ul.thumb li img {
+  width: 80px;
+  height: 80px;
+  border: 1px solid grey;
+}
