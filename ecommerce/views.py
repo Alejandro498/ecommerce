@@ -1,17 +1,31 @@
 from django.shortcuts import render
-from store.models import Product, ReviewRating
+from store.models import Product
+
+FEATURED_CATEGORY_SLUGS = [
+    'cpu',
+    'video-card',
+    'motherboard',
+    'memory',
+    'internal-hard-drive',
+    'power-supply',
+    'case',
+    'monitor',
+]
 
 def home(request):
-    products = Product.objects.all().filter(is_available=True).order_by('created_date')
-
-    reviews = None
-    for product in products:
-        reviews = ReviewRating.objects.filter(product_id=product.id, status=True)
+    products = []
+    for slug in FEATURED_CATEGORY_SLUGS:
+        product = (
+            Product.objects.filter(category__slug=slug, is_available=True, price__gt=0)
+            .select_related('category')
+            .order_by('-price')
+            .first()
+        )
+        if product:
+            products.append(product)
 
     context = {
         'products': products,
-        'reviews': reviews,
     }
-
 
     return render(request, 'home.html', context)

@@ -174,3 +174,6 @@ data.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Third-party PC part CSVs downloaded by import_pc_parts
+/data/pc-parts/

@@ -37,7 +37,7 @@
       <button type="button" class="btn btn-primary dropdown-toggle" data-toggle="dropdown">
         <i class="fa fa-bars"></i> Categorias
       </button>
-      <div class="dropdown-menu">
+      <div class="dropdown-menu" style="max-height: 420px; overflow-y: auto;">
         <a class="dropdown-item" href="{% url 'store' %}">Todos</a>
         {% for category in links %}
         <a class="dropdown-item" href="{{ category.get_url }}">{{category.category_name}}</a>

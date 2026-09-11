@@ -1,24 +1,43 @@
 from django.db import models
 from category.models import Category
 from django.urls import reverse
+from django.templatetags.static import static
 from accounts.models import Account
 from django.db.models import Avg, Count
 
 # Create your models here.
 class Product(models.Model):
-    product_name = models.CharField(max_length=200, unique=True)
-    slug = models.CharField(max_length=200, unique=True)
-    description = models.TextField(max_length=500, blank=True)
+    product_name = models.CharField(max_length=255)
+    slug = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True)
     price = models.IntegerField()
-    images = models.ImageField(upload_to='photos/products')
+    images = models.ImageField(upload_to='photos/products', blank=True)
     stock = models.IntegerField()
     is_available = models.BooleanField(default=True)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
+    part_type = models.CharField(max_length=40, blank=True, db_index=True)
+    specs = models.JSONField(default=dict, blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
     modified_date = models.DateTimeField(auto_now=True)
 
     def get_url(self):
         return reverse('product_detail', args=[self.category.slug, self.slug])
+
+    def get_image_url(self):
+        try:
+            if self.images:
+                return self.images.url
+        except ValueError:
+            pass
+        return static('images/pc-part-placeholder.png')
+
+    def formatted_specs(self):
+        items = []
+        for key, value in (self.specs or {}).items():
+            if value in (None, '', [], {}):
+                continue
+            items.append((_spec_label(key), _format_spec_value(key, value)))
+        return items
 
     def __str__(self):
         return self.product_name
@@ -37,6 +56,35 @@ class Product(models.Model):
             count = int(reviews['count'])
 
         return count
+
+
+def _spec_label(key):
+    labels = {
+        'tdp': 'TDP',
+        'rpm': 'RPM',
+        'cas_latency': 'CAS Latency',
+        'price_per_gb': 'Price / GB',
+        'smt': 'SMT',
+        'pwm': 'PWM',
+        'snr': 'SNR',
+        'fov': 'FOV',
+        'os': 'OS',
+    }
+    return labels.get(key, key.replace('_', ' ').title())
+
+
+def _format_spec_value(key, value):
+    if isinstance(value, bool):
+        return 'Sí' if value else 'No'
+    if key == 'speed' and isinstance(value, (list, tuple)) and len(value) == 2:
+        return f'DDR{value[0]}-{value[1]}'
+    if key == 'modules' and isinstance(value, (list, tuple)) and len(value) == 2:
+        return f'{value[0]} x {value[1]} GB'
+    if key == 'resolution' and isinstance(value, (list, tuple)) and len(value) == 2:
+        return f'{value[0]} x {value[1]}'
+    if isinstance(value, (list, tuple)):
+        return ' / '.join(str(item) for item in value)
+    return str(value)
 
 
 class VariationManager(models.Manager):

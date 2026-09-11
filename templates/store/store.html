@@ -39,37 +39,6 @@
               </div> <!-- card-body.// -->
             </div>
           </article> <!-- filter-group  .// -->
-          <article class="filter-group">
-            <header class="card-header">
-              <a href="#" data-toggle="collapse" data-target="#collapse_4" aria-expanded="true" class="">
-                <i class="icon-control fa fa-chevron-down"></i>
-                <h6 class="title">Tamanos </h6>
-              </a>
-            </header>
-            <div class="filter-content collapse show" id="collapse_4" style="">
-              <div class="card-body">
-                <label class="checkbox-btn">
-                  <input type="checkbox">
-                  <span class="btn btn-light"> XS </span>
-                </label>
-
-                <label class="checkbox-btn">
-                  <input type="checkbox">
-                  <span class="btn btn-light"> SM </span>
-                </label>
-
-                <label class="checkbox-btn">
-                  <input type="checkbox">
-                  <span class="btn btn-light"> LG </span>
-                </label>
-
-                <label class="checkbox-btn">
-                  <input type="checkbox">
-                  <span class="btn btn-light"> XXL </span>
-                </label>
-              </div><!-- card-body.// -->
-            </div>
-          </article> <!-- filter-group .// -->
 
           <article class="filter-group">
             <header class="card-header">
@@ -132,14 +101,14 @@
             <figure class="card card-product-grid">
               <div class="img-wrap">
 
-                <a href="{{ product.get_url }}"><img src="{{ product.images.url }}"></a>
+                <a href="{{ product.get_url }}"><img src="{{ product.get_image_url }}"></a>
 
               </div> <!-- img-wrap.// -->
               <figcaption class="info-wrap">
                 <div class="fix-height">
                   <a href="{{ product.get_url }}" class="title">{{product.product_name}}</a>
                   <div class="price-wrap mt-2">
-                    <span class="price">$ {{ product.price }} </span>
+                    <span class="price">{% if product.price %}$ {{ product.price }}{% else %}Consultar precio{% endif %}</span>
                   </div> <!-- price-wrap.// -->
                 </div>
                 <a href="{% url 'add_cart' product.id %}" class="btn btn-block btn-success">Agregar al Carrito </a>
@@ -156,32 +125,46 @@
         </div> <!-- row end.// -->
 
 
-        <nav class="mt-4" aria-label="Page navigation sample">
+        <nav class="mt-4" aria-label="Paginacion de productos">
 
           {% if products.has_other_pages %}
-          <ul class="pagination">
+          <ul class="pagination flex-wrap align-items-center">
 
             {% if products.has_previous %}
-            <li class="page-item"><a class="page-link" href="?page={{products.previous_page_number}}">Anterior</a></li>
+            <li class="page-item"><a class="page-link" href="?{% if request.GET.keyword %}keyword={{ request.GET.keyword }}&{% endif %}page={{products.previous_page_number}}">Anterior</a></li>
             {% else %}
             <li class="page-item disabled"><a class="page-link" href="#">Anterior</a></li>
             {% endif %}
 
 
-            {% for i in products.paginator.page_range %}
+            {% for i in page_range %}
 
-              {% if products.number == i %}
+              {% if i == 'jump' %}
+                <li class="page-item page-jump">
+                  <button type="button" class="page-link page-jump-toggle" aria-label="Ir a pagina">...</button>
+                  <form class="page-jump-popover" method="get">
+                    {% if request.GET.keyword %}
+                    <input type="hidden" name="keyword" value="{{ request.GET.keyword }}">
+                    {% endif %}
+                    <label class="page-jump-label">Ir a pagina</label>
+                    <div class="page-jump-row">
+                      <input class="form-control form-control-sm" type="number" name="page" min="1" max="{{ products.paginator.num_pages }}" placeholder="1-{{ products.paginator.num_pages }}" required>
+                      <button class="btn btn-sm btn-primary" type="submit">Ir</button>
+                    </div>
+                  </form>
+                </li>
+              {% elif products.number == i %}
                 <li class="page-item active"><a class="page-link" href="#">{{i}}</a></li>
               {% else %}
-                <li class="page-item"><a class="page-link" href="?page={{i}}">{{i}}</a></li>
+                <li class="page-item"><a class="page-link" href="?{% if request.GET.keyword %}keyword={{ request.GET.keyword }}&{% endif %}page={{i}}">{{i}}</a></li>
               {% endif %}
 
             {% endfor %}
 
             {% if products.has_next %}
-              <li class="page-item"><a class="page-link" href="?page={{products.next_page_number}}">Siguiente</a></li>
+              <li class="page-item"><a class="page-link" href="?{% if request.GET.keyword %}keyword={{ request.GET.keyword }}&{% endif %}page={{products.next_page_number}}">Siguiente</a></li>
             {% else %}
-              <li class="page-item disabled"><a class="page-link" href="#">Siguiente</a></li>
+            <li class="page-item disabled"><a class="page-link" href="#">Siguiente</a></li>
             {% endif %}
 
           </ul>
@@ -197,6 +180,48 @@
 </section>
 <!-- ========================= SECTION CONTENT END// ========================= -->
 
+<script>
+(function () {
+  var jump = document.querySelector('.page-jump');
+  if (!jump) return;
 
+  var toggle = jump.querySelector('.page-jump-toggle');
+  var popover = jump.querySelector('.page-jump-popover');
+  var input = popover.querySelector('input[name="page"]');
 
+  toggle.addEventListener('click', function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    var open = popover.classList.toggle('is-open');
+    if (open) {
+      input.focus();
+      input.select();
+    }
+  });
+
+  popover.addEventListener('click', function (event) {
+    event.stopPropagation();
+  });
+
+  document.addEventListener('click', function () {
+    popover.classList.remove('is-open');
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      popover.classList.remove('is-open');
+    }
+  });
+
+  popover.addEventListener('submit', function () {
+    var max = parseInt(input.getAttribute('max'), 10);
+    var value = parseInt(input.value, 10);
+    if (!value || value < 1) {
+      input.value = 1;
+    } else if (value > max) {
+      input.value = max;
+    }
+  });
+})();
+</script>
 {% endblock %}
