@@ -1,0 +1,46 @@
+Limpiar fuentes de poder
+1.-Convertir dolar a peso con cambio a 20 pesos y que los trunque a 2 decimales.
+2.-Eliminar las que tengan algun campo vacio
+3.-Agregar brand como columna.
+opciones{
+    "Corsair",
+    "EVGA",
+    "Seasonic",
+    "Thermaltake",
+    "Cooler Master",
+    "MSI",
+    "ASUS",
+    "Gigabyte",
+    "be quiet!",
+    "be quiet",
+    "NZXT",
+    "SilverStone",
+    "Super Flower",
+    "FSP",
+    "Antec",
+    "XPG",
+    "DeepCool",
+    "Fractal Design",
+    "Enermax",
+    "Rosewill",
+    "Phanteks",
+    "Lian Li",
+    "SAMA",
+    "Thermaltake",
+    "Cougar",
+    "In Win",
+    "InWin",
+    "Cooler Master",
+    "Redragon",
+    "GameMax",
+    "Thermaltake",
+    "Vetroo",
+    "Montech",
+    "Apevia",
+    "ASRock",
+    "Segotep",
+    "Azza",
+    "Razer",
+}
+
+ARCHIVO LIMPIO  =======  "power-supply-123"
