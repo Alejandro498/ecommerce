@@ -62,6 +62,8 @@ def _spec_label(key):
     labels = {
         'tdp': 'TDP',
         'rpm': 'RPM',
+        'rpm_min': 'RPM min',
+        'rpm_max': 'RPM max',
         'cas_latency': 'CAS Latency',
         'price_per_gb': 'Price / GB',
         'smt': 'SMT',
@@ -69,6 +71,17 @@ def _spec_label(key):
         'snr': 'SNR',
         'fov': 'FOV',
         'os': 'OS',
+        'gpu_brand': 'GPU',
+        'module_count': 'Modulos',
+        'module_capacity_gb': 'Capacidad por modulo (GB)',
+        'radiator_size': 'Radiador (mm)',
+        'cooler_type': 'Tipo de cooler',
+        'included_psu_wattage': 'Fuente incluida (W)',
+        'has_included_psu': 'Incluye fuente',
+        'max_motherboard_form_factor': 'Formato max. motherboard',
+        'noise_min_db': 'Ruido min (dB)',
+        'noise_max_db': 'Ruido max (dB)',
+        'internal_35_bays': 'Bahias 3.5"',
     }
     return labels.get(key, key.replace('_', ' ').title())
 

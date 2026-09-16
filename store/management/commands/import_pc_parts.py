@@ -1,10 +1,8 @@
 import csv
 import json
 import re
-import urllib.request
 from io import BytesIO
 from pathlib import Path
-from zipfile import ZipFile
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -19,40 +17,23 @@ from category.models import Category
 from store.models import Product
 
 
-DATASET_ZIP_URL = 'https://github.com/docyx/pc-part-dataset/raw/main/data/csv.zip'
 PLACEHOLDER_NAME = 'photos/products/pc-part-placeholder.png'
+SKIP_SPEC_KEYS = {'name', 'price', 'price_available', 'socket_source'}
 
 PART_CATEGORIES = [
-    ('cpu.csv', 'cpu', 'Procesadores', 'CPUs y procesadores'),
-    ('cpu-cooler.csv', 'cpu-cooler', 'Coolers de CPU', 'Disipadores y refrigeracion liquida'),
-    ('motherboard.csv', 'motherboard', 'Placas Madre', 'Motherboards'),
-    ('memory.csv', 'memory', 'Memoria RAM', 'Memoria DDR'),
-    ('internal-hard-drive.csv', 'internal-hard-drive', 'Almacenamiento', 'SSD y discos internos'),
-    ('video-card.csv', 'video-card', 'Tarjetas de Video', 'GPUs'),
-    ('case.csv', 'case', 'Gabinetes', 'Cases para PC'),
-    ('power-supply.csv', 'power-supply', 'Fuentes de Poder', 'PSUs'),
-    ('optical-drive.csv', 'optical-drive', 'Unidades Opticas', 'Lectores CD/DVD/Blu-ray'),
-    ('os.csv', 'os', 'Sistemas Operativos', 'Licencias de sistema operativo'),
-    ('monitor.csv', 'monitor', 'Monitores', 'Pantallas'),
-    ('external-hard-drive.csv', 'external-hard-drive', 'Almacenamiento Externo', 'Discos y SSD externos'),
-    ('case-accessory.csv', 'case-accessory', 'Accesorios de Gabinete', 'Accesorios para case'),
-    ('case-fan.csv', 'case-fan', 'Ventiladores', 'Fans de gabinete'),
-    ('fan-controller.csv', 'fan-controller', 'Controladores de Fan', 'Controladores de ventiladores'),
-    ('thermal-paste.csv', 'thermal-paste', 'Pasta Termica', 'Compuesto termico'),
-    ('ups.csv', 'ups', 'UPS', 'Sistemas de alimentacion ininterrumpida'),
-    ('sound-card.csv', 'sound-card', 'Tarjetas de Sonido', 'Sound cards'),
-    ('wired-network-card.csv', 'wired-network-card', 'Red Cableada', 'Adaptadores Ethernet'),
-    ('wireless-network-card.csv', 'wireless-network-card', 'Red Inalambrica', 'Adaptadores Wi-Fi'),
-    ('headphones.csv', 'headphones', 'Auriculares', 'Headphones'),
-    ('keyboard.csv', 'keyboard', 'Teclados', 'Keyboards'),
-    ('mouse.csv', 'mouse', 'Mouse', 'Mouses y trackballs'),
-    ('speakers.csv', 'speakers', 'Parlantes', 'Speakers'),
-    ('webcam.csv', 'webcam', 'Webcams', 'Camaras web'),
+    ('cpu-123.csv', 'cpu', 'Procesadores', 'CPUs y procesadores'),
+    ('cpu-cooler-1000.csv', 'cpu-cooler', 'Coolers de CPU', 'Disipadores y refrigeracion liquida'),
+    ('motherboard-1000.csv', 'motherboard', 'Placas Madre', 'Motherboards'),
+    ('memory-12345.csv', 'memory', 'Memoria RAM', 'Memoria DDR'),
+    ('internal-hard-drive-1234.csv', 'internal-hard-drive', 'Almacenamiento', 'SSD y discos internos'),
+    ('video-card-1234.csv', 'video-card', 'Tarjetas de Video', 'GPUs'),
+    ('case-1000.csv', 'case', 'Gabinetes', 'Cases para PC'),
+    ('power-supply-123.csv', 'power-supply', 'Fuentes de Poder', 'PSUs'),
 ]
 
 
 class Command(BaseCommand):
-    help = 'Replace store products with the PC Part Dataset CSVs (https://github.com/docyx/pc-part-dataset)'
+    help = 'Replace store products with the cleaned CSVs in CleanedCSV/'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -63,7 +44,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--csv-dir',
             default='',
-            help='Directory with CSV files. If omitted, the dataset zip is downloaded.',
+            help='Directory with cleaned CSV files. Defaults to CleanedCSV/',
         )
         parser.add_argument(
             '--limit',
@@ -120,40 +101,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f'Imported {total} PC parts.'))
 
     def _resolve_csv_dir(self, csv_dir):
-        if csv_dir:
-            path = Path(csv_dir)
-            if not path.exists():
-                raise CommandError(f'CSV directory not found: {path}')
-            return path
-
-        data_dir = Path(settings.BASE_DIR) / 'data' / 'pc-parts'
-        csv_path = data_dir / 'csv'
-        expected = {item[0] for item in PART_CATEGORIES}
-        if csv_path.exists() and expected.issubset({p.name for p in csv_path.glob('*.csv')}):
-            return csv_path
-
-        data_dir.mkdir(parents=True, exist_ok=True)
-        zip_path = data_dir / 'csv.zip'
-        self.stdout.write(f'Downloading PC Part Dataset CSVs from {DATASET_ZIP_URL}')
-        request = urllib.request.Request(
-            DATASET_ZIP_URL,
-            headers={'User-Agent': 'ModularEcommerce-pc-parts-importer'},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                zip_path.write_bytes(response.read())
-        except Exception as exc:
-            raise CommandError(f'Could not download dataset zip: {exc}') from exc
-
-        with ZipFile(zip_path) as archive:
-            archive.extractall(data_dir)
-
-        if not csv_path.exists():
-            nested = list(data_dir.rglob('cpu.csv'))
-            if nested:
-                return nested[0].parent
-            raise CommandError('The dataset zip did not contain CSV files.')
-        return csv_path
+        path = Path(csv_dir) if csv_dir else Path(settings.BASE_DIR) / 'CleanedCSV'
+        if not path.exists():
+            raise CommandError(f'CSV directory not found: {path}')
+        return path
 
     def _ensure_placeholder(self):
         if not default_storage.exists(PLACEHOLDER_NAME):
@@ -203,7 +154,7 @@ class Command(BaseCommand):
                     continue
                 specs = {}
                 for key, raw_value in row.items():
-                    if key in (None, 'name', 'price'):
+                    if key is None or key in SKIP_SPEC_KEYS:
                         continue
                     parsed = _parse_spec(raw_value)
                     if parsed is not None:

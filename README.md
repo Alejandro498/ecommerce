@@ -1,12 +1,12 @@
 # Ecommerce de componentes de PC
 
-Tienda en Django con catálogo de piezas de PC (CPUs, placas madre, RAM, GPUs, etc.). Los productos se cargan desde el [PC Part Dataset](https://github.com/docyx/pc-part-dataset).
+Tienda en Django con catálogo de piezas de PC (CPUs, placas madre, RAM, GPUs, etc.). Los productos se cargan desde los CSV limpios en `CleanedCSV/`.
 
 ## Requisitos
 
 - Python 3.10
 - pip
-- Conexión a internet la primera vez que importes el catálogo (descarga los CSV)
+- Los CSV limpios deben estar en `CleanedCSV/` (ya vienen en el proyecto)
 
 En local se usa SQLite. No hace falta PostgreSQL ni AWS.
 
@@ -75,15 +75,13 @@ python manage.py migrate
 
 ## 6. Cargar el catálogo de productos
 
-Esto descarga los CSV del dataset y crea unas 66.000 piezas en 25 categorías. Tarda poco, pero necesita internet.
+Lee los CSV limpios de `CleanedCSV/` y crea las 8 categorías de componentes (CPU, cooler, motherboard, RAM, almacenamiento, GPU, gabinete y PSU).
 
 ```bash
 python manage.py import_pc_parts --reset
 ```
 
-`--reset` borra categorías y productos actuales y los reemplaza.
-
-Si ya importaste una vez y los CSV están en `data/pc-parts/`, el comando reutiliza esos archivos.
+`--reset` borra categorías y productos actuales y los reemplaza. Las cuentas de usuario se conservan.
 
 ## 7. Crear un usuario administrador (opcional)
 
@@ -126,6 +124,6 @@ python manage.py import_pc_parts --reset --limit 20
 ## Notas
 
 - El dataset no incluye fotos de producto; se usa una imagen genérica.
-- Los precios vienen en USD. Si PCPartPicker no publicó precio, se muestra “Consultar precio”.
+- Los precios vienen en MXN. Si el CSV no trae precio, se muestra “Consultar precio”.
 - Con `USE_AWS=True` hace falta configurar `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y `AWS_STORAGE_BUCKET_NAME`, y reiniciar el servidor.
 - `db.sqlite3`, `.env` y `venv/` no se suben al repositorio.
