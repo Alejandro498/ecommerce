@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='product',
             name='specs',
-            field=models.JSONField(blank=True, default=dict),
+            field=models.TextField(blank=True, default='{}'),
         ),
         migrations.AlterField(
             model_name='product',

@@ -1,3 +1,5 @@
+import json
+
 from django.db import models
 from category.models import Category
 from django.urls import reverse
@@ -16,9 +18,21 @@ class Product(models.Model):
     is_available = models.BooleanField(default=True)
     category = models.ForeignKey(Category, on_delete=models.CASCADE)
     part_type = models.CharField(max_length=40, blank=True, db_index=True)
-    specs = models.JSONField(default=dict, blank=True)
+    specs = models.TextField(default='{}', blank=True)
     created_date = models.DateTimeField(auto_now_add=True)
     modified_date = models.DateTimeField(auto_now=True)
+
+    def get_specs_dict(self):
+        value = self.specs
+        if isinstance(value, dict):
+            return value
+        if value in (None, '', 'null'):
+            return {}
+        try:
+            loaded = json.loads(value)
+            return loaded if isinstance(loaded, dict) else {}
+        except (TypeError, ValueError):
+            return {}
 
     def get_url(self):
         return reverse('product_detail', args=[self.category.slug, self.slug])
@@ -33,11 +47,16 @@ class Product(models.Model):
 
     def formatted_specs(self):
         items = []
-        for key, value in (self.specs or {}).items():
+        for key, value in self.get_specs_dict().items():
             if value in (None, '', [], {}):
                 continue
             items.append((_spec_label(key), _format_spec_value(key, value)))
         return items
+
+    def save(self, *args, **kwargs):
+        if isinstance(self.specs, dict):
+            self.specs = json.dumps(self.specs, ensure_ascii=False)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.product_name

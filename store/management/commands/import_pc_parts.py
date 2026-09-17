@@ -218,7 +218,7 @@ class Command(BaseCommand):
                     is_available=True,
                     category=category,
                     part_type=part_type,
-                    specs=specs,
+                    specs=json.dumps(specs, ensure_ascii=False),
                     created_date=now,
                     modified_date=now,
                 ))

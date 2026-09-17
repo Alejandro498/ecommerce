@@ -32,6 +32,7 @@ ALLOWED_HOSTS = [
     'ecommerce-env.eba-cat83r4s.us-west-2.elasticbeanstalk.com',
     'localhost',
     '127.0.0.1',
+    'testserver',
 ]
 
 # Application definition
@@ -48,6 +49,7 @@ INSTALLED_APPS = [
     'store',
     'carts',
     'orders',
+    'assistant',
     'admin_honeypot',
     'storages',
 ]
