@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load money_filters %}
 
 
 
@@ -75,8 +76,8 @@
                 </td>
                 <td>
                     <div class="price-wrap">
-                        <var class="price">$  {{ cart_item.sub_total }}  </var>
-                        <small class="text-muted"> $ {{cart_item.product.price}}    cada uno </small>
+                        <var class="price">$ {{ cart_item.sub_total|money }}</var>
+                        <small class="text-muted"> $ {{ cart_item.product.price|money }} cada uno </small>
                     </div> <!-- price-wrap .// -->
                 </td>
 
@@ -104,15 +105,15 @@
             <div class="card-body">
                 <dl class="dlist-align">
                   <dt>Precio Total:</dt>
-                  <dd class="text-right">$ {{ total }}</dd>
+                  <dd class="text-right">$ {{ total|money }}</dd>
                 </dl>
                 <dl class="dlist-align">
                   <dt>Impuesto:</dt>
-                  <dd class="text-right"> $ {{ tax }}</dd>
+                  <dd class="text-right">$ {{ tax|money }}</dd>
                 </dl>
                 <dl class="dlist-align">
                   <dt>Total:</dt>
-                  <dd class="text-right text-dark b"><strong>$ {{grand_total}}</strong></dd>
+                  <dd class="text-right text-dark b"><strong>$ {{ grand_total|money }} MXN</strong></dd>
                 </dl>
                 <hr>
                 <p class="text-center mb-3">
@@ -120,6 +121,7 @@
                 </p>
 
                   <div id="paypal-button-container"></div>
+                  <div id="payment-status" class="text-center mt-3" style="display:none;"></div>
 
             </div> <!-- card-body.// -->
             </div> <!-- card.// -->
@@ -153,7 +155,7 @@
           }
 
 
-          var amount = "{{ grand_total }}"
+          var amount = "{{ grand_total|floatformat:2 }}"
           var url = "{% url 'payments' %}"
           var csrftoken = getCookie('csrftoken');
           var orderID = "{{ order.order_number }}"
@@ -167,6 +169,7 @@
                    return actions.order.create({
                        purchase_units: [{
                            amount: {
+                               currency_code: 'MXN',
                                value: amount
                            }
                        }]
@@ -176,8 +179,10 @@
                // Finalize the transaction
                onApprove: function(data, actions) {
                    return actions.order.capture().then(function(orderData) {
-                       // Successful capture! For demo purposes:
-                       console.log(orderData);
+                       var statusBox = document.getElementById('payment-status');
+                       document.getElementById('paypal-button-container').style.display = 'none';
+                       statusBox.style.display = 'block';
+                       statusBox.innerHTML = '<div class="alert alert-info mb-0">Pago recibido. Confirmando tu orden...</div>';
                        sendData();
 
                        function sendData(){
@@ -194,9 +199,18 @@
                              status: orderData.status
                            }),
                          })
-                         .then((response) => response.json())
+                         .then((response) => {
+                           if (!response.ok) {
+                             throw new Error('No se pudo confirmar la orden');
+                           }
+                           return response.json();
+                         })
                          .then((data) => {
+                              statusBox.innerHTML = '<div class="alert alert-success mb-0">Pago completado. Redirigiendo...</div>';
                               window.location.href = redirect_url + '?order_number='+data.order_number+'&payment_id='+data.transID;
+                         })
+                         .catch(() => {
+                              statusBox.innerHTML = '<div class="alert alert-danger mb-0">El cobro en PayPal se hizo, pero no se pudo confirmar la orden. Revisa tu historial o contacta soporte.</div>';
                          });
                        }
 

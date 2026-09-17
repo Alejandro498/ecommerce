@@ -1,5 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
+from django.conf import settings
+from django.db import transaction
 from carts.models import CartItem
 from .forms import OrderForm
 import datetime
@@ -15,54 +17,62 @@ def payments(request):
     body = json.loads(request.body)
     order = Order.objects.get(user=request.user, is_ordered=False, order_number=body['orderID'])
 
-    payment = Payment(
-        user = request.user,
-        payment_id = body['transID'],
-        payment_method = body['payment_method'],
-        amount_id = order.order_total,
-        status = body['status'],
-    )
-    payment.save()
+    with transaction.atomic():
+        payment = Payment(
+            user = request.user,
+            payment_id = body['transID'],
+            payment_method = body['payment_method'],
+            amount_id = order.order_total,
+            status = body['status'],
+        )
+        payment.save()
 
-    order.payment = payment
-    order.is_ordered = True
-    order.save()
+        order.payment = payment
+        order.is_ordered = True
+        order.save()
 
-    # Mover todos los carrito items hacia la tabla order product
-    cart_items = CartItem.objects.filter(user=request.user)
+        # Mover todos los carrito items hacia la tabla order product
+        cart_items = CartItem.objects.filter(user=request.user)
 
-    for item in cart_items:
-        orderproduct = OrderProduct()
-        orderproduct.order_id = order.id
-        orderproduct.payment = payment
-        orderproduct.user_id = request.user.id
-        orderproduct.product_id = item.product_id
-        orderproduct.quantity = item.quantity
-        orderproduct.product_price = item.product.price
-        orderproduct.ordered = True
-        orderproduct.save()
+        for item in cart_items:
+            orderproduct = OrderProduct()
+            orderproduct.order_id = order.id
+            orderproduct.payment = payment
+            orderproduct.user_id = request.user.id
+            orderproduct.product_id = item.product_id
+            orderproduct.quantity = item.quantity
+            orderproduct.product_price = item.product.price
+            orderproduct.ordered = True
+            orderproduct.save()
 
-        cart_item = CartItem.objects.get(id=item.id)
-        product_variation = cart_item.variations.all()
-        orderproduct = OrderProduct.objects.get(id=orderproduct.id)
-        orderproduct.variation.set(product_variation)
-        orderproduct.save()
+            cart_item = CartItem.objects.get(id=item.id)
+            product_variation = cart_item.variations.all()
+            orderproduct = OrderProduct.objects.get(id=orderproduct.id)
+            orderproduct.variation.set(product_variation)
+            orderproduct.save()
 
-        product = Product.objects.get(id=item.product_id)
-        product.stock -= item.quantity
-        product.save()
+            product = Product.objects.get(id=item.product_id)
+            product.stock -= item.quantity
+            product.save()
 
-    CartItem.objects.filter(user=request.user).delete()
+        CartItem.objects.filter(user=request.user).delete()
 
-    mail_subject = 'Gracias por tu compra'
-    body = render_to_string('orders/order_recieved_email.html', {
-        'user': request.user,
-        'order': order,
-    })
-
-    to_email = request.user.email
-    send_email = EmailMessage(mail_subject, body, to=[to_email])
-    send_email.send()
+    try:
+        if settings.DEFAULT_FROM_EMAIL and request.user.email:
+            mail_subject = 'Gracias por tu compra'
+            email_body = render_to_string('orders/order_recieved_email.html', {
+                'user': request.user,
+                'order': order,
+            })
+            send_email = EmailMessage(
+                mail_subject,
+                email_body,
+                settings.DEFAULT_FROM_EMAIL,
+                to=[request.user.email],
+            )
+            send_email.send()
+    except Exception:
+        pass
 
     data = {
         'order_number': order.order_number,

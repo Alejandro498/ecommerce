@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load money_filters %}
 
 
 
@@ -75,8 +76,8 @@
         </td>
         <td>
             <div class="price-wrap">
-                <var class="price">$  {{ cart_item.sub_total }}  </var>
-                <small class="text-muted"> $ {{cart_item.product.price}}    cada uno </small>
+                <var class="price">$ {{ cart_item.sub_total|money }}</var>
+                <small class="text-muted"> $ {{ cart_item.product.price|money }} cada uno </small>
             </div> <!-- price-wrap .// -->
         </td>
         <td class="text-right">
@@ -98,15 +99,15 @@
             <div class="card-body">
                 <dl class="dlist-align">
                   <dt>Precio Total:</dt>
-                  <dd class="text-right">$ {{ total }}</dd>
+                  <dd class="text-right">$ {{ total|money }}</dd>
                 </dl>
                 <dl class="dlist-align">
                   <dt>Impuesto:</dt>
-                  <dd class="text-right"> $ {{ tax }}</dd>
+                  <dd class="text-right">$ {{ tax|money }}</dd>
                 </dl>
                 <dl class="dlist-align">
                   <dt>Total:</dt>
-                  <dd class="text-right text-dark b"><strong>$ {{grand_total}}</strong></dd>
+                  <dd class="text-right text-dark b"><strong>$ {{ grand_total|money }}</strong></dd>
                 </dl>
                 <hr>
                 <p class="text-center mb-3">

@@ -1,12 +1,14 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load money_filters %}
 
 {% block content %}
 
 
 <div class="container" style="margin-top: 50px;">
     <center><i class="fas fa-check-circle" style="font-size: 72px;margin-bottom: 20px;color: #28A745;"></i></center>
-    <h2 class="text-center">El Pago se realizo con exito</h2>
+    <h2 class="text-center">El pago se realizó con éxito</h2>
+    <p class="text-center text-muted">Tu orden quedó registrada. Conserva el número de orden y de transacción de esta factura.</p>
 	<br>
 	<div class="text-center">
 		<a href="{% url 'store' %}" class="btn btn-success">Sigue Comprando</a>
@@ -79,23 +81,23 @@
                                                     </p>
                                                 </td>
                                                 <td class="text-center">{{ item.quantity }}</td>
-                                                <td class="text-center">$ {{item.product_price}} USD</td>
+                                                <td class="text-center">$ {{ item.product_price|money }} MXN</td>
                                             </tr>
                                           {% endfor %}
                                         </tbody>
                                         <tfoot>
                                             <tr>
                                                 <th colspan="2" class="text-right">Sub Total:</th>
-                                                <th class="text-center">$  {{subtotal}} USD</th>
+                                                <th class="text-center">$ {{ subtotal|money }} MXN</th>
                                             </tr>
                                             <tr>
                                                 <th colspan="2" class="text-right">Tax:</th>
-                                                <th class="text-center">$ {{ order.tax }} USD</th>
+                                                <th class="text-center">$ {{ order.tax|money }} MXN</th>
                                             </tr>
 
                                             <tr>
                                                 <th colspan="2" class="text-right">Grand Total:</th>
-                                                <th class="text-center">$ {{ order.order_total }} USD</th>
+                                                <th class="text-center">$ {{ order.order_total|money }} MXN</th>
                                             </tr>
                                         </tfoot>
                                     </table>
