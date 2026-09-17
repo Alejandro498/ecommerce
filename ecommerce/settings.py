@@ -27,11 +27,12 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', cast=bool, default=True)
 
+# '*' avoids DisallowedHost on the first Beanstalk deploy (health checks + new CNAME).
+# Later you can set ALLOWED_HOSTS to the environment URL in Beanstalk properties.
 ALLOWED_HOSTS = [
-    'tiendadjango-env.eba-9kdsabdq.us-east-2.elasticbeanstalk.com',
-    'ecommerce-env.eba-cat83r4s.us-west-2.elasticbeanstalk.com',
-    'localhost',
-    '127.0.0.1',
+    host.strip()
+    for host in config('ALLOWED_HOSTS', default='*').split(',')
+    if host.strip()
 ]
 
 # Application definition
@@ -160,10 +161,19 @@ STATICFILES_DIRS = [
 MEDIA_ROOT = BASE_DIR / 'media'
 
 if USE_AWS:
-    AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
-    AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
     AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
-    AWS_S3_CUSTOM_DOMAIN = '%s.s3.amazonaws.com' % AWS_STORAGE_BUCKET_NAME
+    AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
+    # Optional: if empty, boto3 uses the EC2/EB instance IAM role.
+    _aws_key = config('AWS_ACCESS_KEY_ID', default='')
+    _aws_secret = config('AWS_SECRET_ACCESS_KEY', default='')
+    if _aws_key and _aws_secret:
+        AWS_ACCESS_KEY_ID = _aws_key
+        AWS_SECRET_ACCESS_KEY = _aws_secret
+
+    AWS_S3_CUSTOM_DOMAIN = '%s.s3.%s.amazonaws.com' % (
+        AWS_STORAGE_BUCKET_NAME,
+        AWS_S3_REGION_NAME,
+    )
     AWS_S3_OBJECT_PARAMETERS = {
         'CacheControl': 'max-age=86400',
     }
