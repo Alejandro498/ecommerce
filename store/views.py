@@ -1,13 +1,14 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.http import Http404
 from .models import Product, ReviewRating, ProductGallery
 from category.models import Category
 from carts.models import CartItem
 from carts.views import _cart_id
 from django.core.paginator import Paginator
-from django.db.models import Q
 from .forms import ReviewForm
 from django.contrib import messages
 from orders.models import OrderProduct
+from .catalog_concurrent import CSV_BY_SLUG, fetch_catalog_concurrent
 
 PRODUCTS_PER_PAGE = 12
 
@@ -29,20 +30,28 @@ def _paginate(request, queryset, per_page=PRODUCTS_PER_PAGE):
 
 
 def store(request, category_slug=None):
-    if category_slug != None:
-        categories = get_object_or_404(Category, slug=category_slug)
-        products = Product.objects.filter(category=categories, is_available=True).select_related('category').order_by('id')
-        product_count = products.count()
-    else:
-        products = Product.objects.filter(is_available=True).select_related('category').order_by('id')
-        product_count = products.count()
+    if category_slug is not None:
+        try:
+            Category.objects.get(slug=category_slug)
+        except Category.DoesNotExist:
+            if category_slug not in CSV_BY_SLUG:
+                raise Http404('No Category matches the given query.')
+        except Exception:
+            # DB caída: seguimos si el slug existe en el mapa CSV.
+            if category_slug not in CSV_BY_SLUG:
+                raise
 
+    products, product_count, catalog_trace = fetch_catalog_concurrent(
+        category_slug=category_slug,
+        keyword=None,
+    )
     paged_products, page_range = _paginate(request, products)
 
-    context =  {
-        'products' : paged_products,
+    context = {
+        'products': paged_products,
         'product_count': product_count,
         'page_range': page_range,
+        'catalog_trace': catalog_trace,
     }
 
     return render(request, 'store/store.html', context)
@@ -80,22 +89,23 @@ def product_detail(request, category_slug, product_slug):
 
 
 def search(request):
-    products = Product.objects.none()
+    products = []
     product_count = 0
     page_range = []
+    catalog_trace = None
     if 'keyword' in request.GET:
         keyword = request.GET['keyword']
         if keyword:
-            products = Product.objects.filter(
-                Q(description__icontains=keyword) | Q(product_name__icontains=keyword),
-                is_available=True,
-            ).select_related('category').order_by('-created_date')
-            product_count = products.count()
+            products, product_count, catalog_trace = fetch_catalog_concurrent(
+                category_slug=None,
+                keyword=keyword,
+            )
             products, page_range = _paginate(request, products)
     context = {
         'products': products,
         'product_count': product_count,
         'page_range': page_range,
+        'catalog_trace': catalog_trace,
     }
 
     return render(request, 'store/store.html', context)

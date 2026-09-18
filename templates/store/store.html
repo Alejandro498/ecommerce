@@ -111,7 +111,11 @@
                     <span class="price">{% if product.price %}$ {{ product.price }}{% else %}Consultar precio{% endif %}</span>
                   </div> <!-- price-wrap.// -->
                 </div>
+                {% if product.id %}
                 <a href="{% url 'add_cart' product.id %}" class="btn btn-block btn-success">Agregar al Carrito </a>
+                {% else %}
+                <span class="btn btn-block btn-secondary disabled" title="Disponible solo desde CSV (sin id de DB)">Solo lectura (CSV)</span>
+                {% endif %}
               </figcaption>
             </figure>
           </div> <!-- col.// -->
@@ -224,4 +228,51 @@
   });
 })();
 </script>
+
+{% if catalog_trace %}
+{{ catalog_trace|json_script:"catalog-trace-data" }}
+<script>
+(function () {
+  var el = document.getElementById('catalog-trace-data');
+  if (!el) return;
+  var trace;
+  try {
+    trace = JSON.parse(el.textContent);
+  } catch (err) {
+    console.warn('[Catálogo concurrente] No se pudo parsear la traza', err);
+    return;
+  }
+  var db = trace.workers && trace.workers.database;
+  var csv = trace.workers && trace.workers.csv;
+  console.groupCollapsed('%c[Catálogo concurrente] 2 hilos en paralelo', 'color:#0b6;font-weight:bold');
+  console.log('Modo:', trace.mode);
+  console.log('Orden en que terminaron:', trace.finish_order);
+  console.log('Fuente elegida:', trace.chosen_label, '(' + trace.chosen_source + ')');
+  console.log('Motivo:', trace.reason);
+  console.log('Tiempo de pared (paralelo):', trace.wall_clock_ms, 'ms');
+  console.log('Si fuera secuencial (suma):', trace.sequential_estimate_ms, 'ms');
+  console.log('Latencia ahorrada ~', trace.latency_saved_ms, 'ms');
+  console.table([
+    {
+      hilo: db && db.thread,
+      fuente: db && db.label,
+      ok: db && db.ok,
+      productos: db && db.count,
+      ms: db && db.elapsed_ms,
+      error: (db && db.error) || ''
+    },
+    {
+      hilo: csv && csv.thread,
+      fuente: csv && csv.label,
+      ok: csv && csv.ok,
+      productos: csv && csv.count,
+      ms: csv && csv.elapsed_ms,
+      error: (csv && csv.error) || ''
+    }
+  ]);
+  console.log('Detalle completo:', trace);
+  console.groupEnd();
+})();
+</script>
+{% endif %}
 {% endblock %}

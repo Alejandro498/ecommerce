@@ -210,3 +210,9 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Catálogo concurrente: hilo DB (SQLite local / RDS) + hilo CSV en paralelo.
+# CATALOG_SIMULATE_DB_FAILURE=True fuerza el fallback a CSV (útil para demo sin RDS).
+CATALOG_DB_TIMEOUT_SECONDS = config('CATALOG_DB_TIMEOUT_SECONDS', default=3, cast=float)
+CATALOG_SIMULATE_DB_FAILURE = config('CATALOG_SIMULATE_DB_FAILURE', default=False, cast=bool)
+CATALOG_SIMULATE_DB_DELAY_MS = config('CATALOG_SIMULATE_DB_DELAY_MS', default=0, cast=int)
