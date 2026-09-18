@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<section class="section-content padding-y">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-10">
+        <div class="card shadow-sm border-0">
+          <div class="card-body p-4 p-md-5">
+            <div class="text-center mb-4">
+              <span class="badge badge-primary mb-3">Asistente de compras</span>
+              <h2 class="mb-2">Encuentra tu setup ideal</h2>
+              <p class="text-muted mb-0">Responde tus necesidades y te sugerimos componentes alineados a tu presupuesto.</p>
+            </div>
+            <form method="get" action="{% url 'assistant' %}" class="row g-3 align-items-end">
+              <div class="col-md-4"><label class="form-label font-weight-bold" for="id_use_case">Necesidad principal</label>{{ form.use_case }}</div>
+              <div class="col-md-4"><label class="form-label font-weight-bold" for="id_budget">Presupuesto</label>{{ form.budget }}</div>
+              <div class="col-md-3"><label class="form-label font-weight-bold" for="id_category">Categoría</label>{{ form.category }}</div>
+              <div class="col-md-1 text-right"><button type="submit" class="btn btn-primary btn-block">Buscar</button></div>
+            </form>
+          </div>
+        </div>
+        <div class="mt-4">
+          <h4 class="mb-3">Recomendaciones para ti</h4>
+          {% if recommendations %}
+            <div class="row">
+              {% for recommendation in recommendations %}
+                {% with product=recommendation.product %}
+                  <div class="col-md-4 mb-3"><div class="card h-100 border-0 shadow-sm">
+                    <a href="{{ product.get_url }}" class="img-wrap p-3 text-center"><img src="{{ product.get_image_url }}" alt="{{ product.product_name }}" class="img-fluid" style="max-height: 180px; object-fit: contain;"></a>
+                    <div class="card-body"><small class="text-muted d-block mb-2">{{ recommendation.reason }}</small><h5 class="card-title mb-2"><a href="{{ product.get_url }}" class="text-dark">{{ product.product_name }}</a></h5><div class="d-flex justify-content-between align-items-center mb-2"><span class="font-weight-bold text-primary">$ {{ product.price }}</span><span class="badge badge-light">Score {{ recommendation.score }}</span></div><p class="text-muted small mb-0">{{ product.category.category_name }}</p></div>
+                  </div></div>
+                {% endwith %}
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="alert alert-info">No encontramos recomendaciones con esos criterios. Prueba un presupuesto o categoría distinta.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
