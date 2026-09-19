@@ -37,9 +37,47 @@
           {% else %}
             <div class="alert alert-info">No encontramos recomendaciones con esos criterios. Prueba un presupuesto o categoría distinta.</div>
           {% endif %}
+          <p class="text-muted small mt-2 mb-0">Desglose del ranking: abre la consola del navegador (F12) y busca el grupo <strong>Asistente de compras</strong>.</p>
         </div>
       </div>
     </div>
   </div>
 </section>
+{{ assistant_debug|json_script:"assistant-debug-data" }}
+<script>
+(function () {
+  var node = document.getElementById('assistant-debug-data');
+  if (!node) {
+    return;
+  }
+  var debug;
+  try {
+    debug = JSON.parse(node.textContent);
+  } catch (error) {
+    console.warn('Asistente: no se pudo leer el desglose.', error);
+    return;
+  }
+  var banda = debug.banda_precio || {};
+  console.group('%cAsistente de compras', 'color:#0d6efd;font-weight:bold;font-size:13px');
+  console.log('%cProcedimiento', 'font-weight:bold');
+  (debug.procedimiento || []).forEach(function (step) {
+    console.log(step);
+  });
+  console.log('%cFiltros', 'font-weight:bold', debug.filtros);
+  console.log('Categorías evaluadas:', debug.categorias_evaluadas);
+  console.log(
+    'Origen del pool:', debug.origen_pool,
+    '| Candidatos:', debug.pool_size + '/' + debug.pool_limit,
+    '| Banda:', banda.label,
+    '| Precio min/max:', banda.precio_min, '/', banda.precio_max
+  );
+  console.log('Fórmula:', debug.formula, '| Top', debug.top_n);
+  console.log('%cTop ' + debug.top_n, 'font-weight:bold');
+  console.table(debug.top || []);
+  console.groupCollapsed('Todos los candidatos evaluados (' + (debug.evaluados || []).length + ')');
+  console.table(debug.evaluados || []);
+  console.groupEnd();
+  console.groupEnd();
+})();
+</script>
 {% endblock %}

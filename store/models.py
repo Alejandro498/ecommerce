@@ -1,3 +1,5 @@
+import json
+
 from django.db import models
 from category.models import Category
 from django.urls import reverse
@@ -31,9 +33,18 @@ class Product(models.Model):
             pass
         return static('images/pc-part-placeholder.png')
 
+    def get_specs_dict(self):
+        specs = self.specs or {}
+        if isinstance(specs, str):
+            try:
+                specs = json.loads(specs)
+            except (TypeError, ValueError):
+                return {}
+        return specs if isinstance(specs, dict) else {}
+
     def formatted_specs(self):
         items = []
-        for key, value in (self.specs or {}).items():
+        for key, value in self.get_specs_dict().items():
             if value in (None, '', [], {}):
                 continue
             items.append((_spec_label(key), _format_spec_value(key, value)))

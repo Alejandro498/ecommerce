@@ -2,7 +2,7 @@
 DOCUMENTACION TECNICA DEL PROYECTO - ECOMMERCE + ASISTENTE DE COMPRAS
 ====================================================================
 
-Fecha de actualizacion: 2026-09-17
+Fecha de actualizacion: 2026-09-18
 Proyecto: Ecommerce de componentes de PC
 Ubicacion actual: C:\Users\divad\Documents\Proyectos\ecommerce
 Rama de trabajo actual: CleanData
@@ -55,14 +55,15 @@ Se desarrollo una primera fase funcional del asistente de compras con los siguie
   * caso de uso
   * presupuesto
   * categoria opcional
-- logica de recomendacion por score
+- logica de recomendacion por score (precio + specs + keywords)
+- pool limitado: no scorea todo el catalogo, solo candidatos cerca del presupuesto
 - ordenamiento de productos por afinidad con el caso de uso
-- recomendaciones mostradas en pantalla con nombre, precio, categoria y descripcion de uso
+- recomendaciones mostradas en pantalla con nombre, precio, categoria, score y motivo
 - pagina dedicada /assistant/
 - acceso visible desde la navegacion principal
-- pruebas de Django para validar la vista y el flujo basico
+- pruebas de Django para validar la vista, el pool, specs y casos de uso
 - funciona con productos ORM y con elementos del catalogo CSV de `CleanData`
-- devuelve hasta 3 recomendaciones con precio valido
+- devuelve hasta 3 recomendaciones con precio valido y stock disponible
 
 2.5 Compatibilidad y correcciones aplicadas
 - La rama `CleanData` mantiene `Product.specs` como `JSONField`; el asistente acepta diccionarios JSON y texto JSON.
@@ -136,24 +137,29 @@ Se desarrollo una primera fase funcional del asistente de compras con los siguie
 4. FLUJO ACTUAL DEL ASISTENTE
 --------------------------------------------------------------------
 
-El asistente actualmente sigue una logica simple pero funcional:
+El asistente actualmente sigue una logica de ranking por reglas (no es IA generativa):
 
 1. El usuario entra a /assistant/
 2. El formulario solicita:
-   - necesidad principal
-   - presupuesto
+   - necesidad principal (gaming, trabajo, estudio, streaming)
+   - presupuesto en MXN
    - categoria (opcional)
-3. La vista recibe esos parametros con request.GET.
-4. Se seleccionan productos ORM disponibles; si no hay productos, se leen los CSV de `CleanedCSV/`.
-5. Se ejecuta una recomendacion basada en disparadores clave para cada caso de uso.
-6. Se scorea cada producto con una formula simple que toma en cuenta:
-   - distancia del precio al presupuesto
-   - categoria seleccionada
-   - coincidencias con palabras clave por caso de uso
-   - disponibilidad del producto
-   - rango de precios razonable
-7. Se filtran precios validos y se ordenan los productos por score.
-8. Se devuelven las mejores 3 opciones para mostrar en la interfaz.
+3. Si no hay filtros, usa defaults: gaming, 15000 MXN, cualquier categoria.
+4. La vista recibe esos parametros con request.GET.
+5. Se arma un pool de candidatos (maximo 200), no se evalua todo el catalogo:
+   - prioriza productos ORM disponibles (is_available, stock > 0, price > 0)
+   - si la base esta vacia, lee los CSV de `CleanedCSV/`
+   - si hay categoria, solo esa; si no, un subconjunto por caso de uso
+     (gaming: GPU, CPU, RAM, motherboard; trabajo: CPU, RAM, storage, motherboard;
+      estudio: CPU, RAM, storage; streaming: GPU, CPU, RAM, storage)
+   - busca primero productos entre 50% y 125% del presupuesto; si no hay, abre
+     el rango (30-160%, 15-200%, y al final sin tope)
+   - dentro de la banda, ordena por cercania al presupuesto y corta en 200
+6. Cada candidato recibe un score:
+   score = precio + specs de la categoria + keywords del caso de uso
+7. Se ordenan de mayor a menor score y se devuelven las mejores 3 (TOP_N).
+8. La tarjeta muestra nombre, precio, categoria, score y un motivo breve
+   (hasta 3 razones: chipset, VRAM, núcleos, cerca del presupuesto, etc.).
 
 La recomendacion actual no es una IA generativa ni un agente conversacional completo; es una primera fase basada en reglas y ranking por proximidad de preferencias.
 
@@ -167,28 +173,42 @@ Casos soportados en la primera fase:
 - estudio
 - streaming
 
-Categorias principales contempladas en el ranking:
-- cpu
-- video-card
-- motherboard
-- memory
-- monitor
-- power-supply
-- case
-- internal-hard-drive (almacenamiento en `CleanData`)
+Sin categoria elegida, no se mezcla todo el catalogo. Cada uso tiene categorias fijas
+(`USE_CASE_CATEGORIES` en assistant/views.py):
+- gaming: video-card, cpu, memory, motherboard
+- trabajo: cpu, memory, internal-hard-drive, motherboard
+- estudio: cpu, memory, internal-hard-drive
+- streaming: video-card, cpu, memory, internal-hard-drive
 
-Keywords de ejemplo:
-- gaming: rtx, gtx, fps, gaming, nvidia, amd, rgb
-- trabajo: office, productivity, stable, efficient
-- estudio: office, student, budget, compact
-- streaming: streaming, creator, 4k, encoders
+PSU, gabinete y cooler solo entran si el usuario elige esa categoria a mano.
+Monitor no forma parte del ranking actual.
 
-El score considera un equilibrio entre:
-- presupuesto
-- categoria
-- uso
-- disponibilidad
-- palabras clave relevantes
+El score de cada producto es la suma de tres partes:
+
+1. Precio
+   Campana alrededor del presupuesto (hasta ~320 puntos). Premia estar cerca
+   del monto y da un bonus si no se pasa mas de 15%. No elige "el mas barato".
+
+2. Specs (el peso mas grande; cambia con el uso)
+   - GPU: RTX/GTX/Radeon, VRAM, workstation vs gamer
+   - CPU: nucleos, boost, X3D, TDP, i5 vs i9 segun el uso
+   - RAM: GB totales y DDR4/DDR5
+   - Storage: NVMe/SSD y capacidad
+   - Motherboard / PSU / case / cooler: chipset, watts, airflow, radiador, tamaño
+   El mismo producto cambia de ranking segun el caso de uso
+   (ejemplo: 7800X3D gana en gaming; i5 de bajo TDP gana en estudio).
+
+3. Keywords (+35 por coincidencia, con limites de palabra)
+   - gaming: rtx, gtx, radeon, geforce, nvidia, amd, x3d, ddr5, nvme, ssd, gaming
+   - trabajo: quadro, workstation, creator, i7, i9, ecc, nvme
+   - estudio: i5, ryzen, micro, budget, compact, ssd
+   - streaming: rtx, nvenc, creator, ryzen, i7, i9, ddr5, nvme
+
+El top 3 es simplemente los 3 scores mas altos. No hay diversidad forzada:
+pueden salir tres productos de la misma categoria.
+
+El asistente no arma una PC completa ni valida compatibilidad
+(socket, DDR, wattage vs GPU). Eso queda para fases futuras.
 
 --------------------------------------------------------------------
 6. COMANDOS IMPORTANTES PARA DESARROLLAR Y PROBAR

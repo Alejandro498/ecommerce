@@ -7,10 +7,13 @@ se usa el resultado de los CSV en CleanedCSV/ para mantener disponibilidad.
 from __future__ import annotations
 
 import csv
+import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 from django.conf import settings
@@ -34,6 +37,7 @@ PART_CSV_FILES = [
 ]
 
 CSV_BY_SLUG = {slug: (filename, name) for filename, slug, name in PART_CSV_FILES}
+SKIP_SPEC_KEYS = {'name', 'price', 'price_available', 'socket_source'}
 
 
 @dataclass
@@ -47,6 +51,10 @@ class CatalogItem:
     category_slug: str
     part_type: str
     from_csv: bool = True
+    specs: Dict[str, Any] = field(default_factory=dict)
+    stock: int = 1
+    is_available: bool = True
+    description: str = ''
 
     def get_url(self):
         if self.id is None:
@@ -55,6 +63,14 @@ class CatalogItem:
 
     def get_image_url(self):
         return static('images/pc-part-placeholder.png')
+
+    def get_specs_dict(self):
+        return self.specs if isinstance(self.specs, dict) else {}
+
+    @property
+    def category(self):
+        label = CSV_BY_SLUG.get(self.category_slug, ('', 'Componente'))[1]
+        return SimpleNamespace(category_name=label, slug=self.category_slug)
 
 
 def _csv_dir() -> Path:
@@ -69,6 +85,54 @@ def _parse_price(raw) -> int:
         return max(0, int(round(float(cleaned))))
     except (TypeError, ValueError):
         return 0
+
+
+def _parse_csv_spec(raw):
+    if raw in (None, ''):
+        return None
+    if not isinstance(raw, str):
+        return raw
+    value = raw.strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    if lowered in ('true', 'false'):
+        return lowered == 'true'
+    if (value.startswith('[') and value.endswith(']')) or (value.startswith('{') and value.endswith('}')):
+        try:
+            return json.loads(value.replace("'", '"'))
+        except json.JSONDecodeError:
+            return value
+    if re.fullmatch(r'-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)+', value):
+        parsed_values = []
+        for part in value.split(','):
+            part = part.strip()
+            parsed_values.append(float(part) if '.' in part else int(part))
+        return parsed_values
+    try:
+        if '.' in value:
+            return float(value)
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _row_to_specs(row: Dict[str, Any]) -> Dict[str, Any]:
+    specs = {}
+    for key, raw_value in row.items():
+        if key is None or key in SKIP_SPEC_KEYS:
+            continue
+        parsed = _parse_csv_spec(raw_value)
+        if parsed is not None:
+            specs[key] = parsed
+    return specs
+
+
+def _row_is_available(row: Dict[str, Any], price: int) -> bool:
+    raw = row.get('price_available')
+    if raw in (None, ''):
+        return price > 0
+    return str(raw).strip().lower() in ('true', '1', 'yes')
 
 
 def _db_engine_label() -> str:
@@ -171,14 +235,17 @@ def _query_csv(category_slug: Optional[str], keyword: Optional[str]) -> Dict[str
                 slug = f'{base}-{suffix}'
                 suffix += 1
             used_slugs.add(slug)
+            price = _parse_price(row.get('price'))
             items.append(
                 CatalogItem(
                     id=None,
                     product_name=name[:255],
                     slug=slug,
-                    price=_parse_price(row.get('price')),
+                    price=price,
                     category_slug=part_slug,
                     part_type=part_slug,
+                    specs=_row_to_specs(row),
+                    is_available=_row_is_available(row, price),
                 )
             )
 

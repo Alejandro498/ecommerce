@@ -7,7 +7,7 @@
 
     {% if request.GET.command == 'verification' %}
         <div class="container mx-auto alert alert-info" role="alert" style="max-width=380px; margin-top=100px;">
-            Muchas gracias por registrarte en nuestro portal VaxiDrez, te hemos enviado un email para confirmar tu cuenta [{{ request.GET.email }}]
+            Muchas gracias por registrarte en nuestro portal PCBuilder, te hemos enviado un email para confirmar tu cuenta [{{ request.GET.email }}]
             <br><br>
             Si ya verificaste tu cuenta, puedes iniciar sesion <a href="{% url 'login' %}">Login</a>
         </div>

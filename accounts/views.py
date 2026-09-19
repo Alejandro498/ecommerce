@@ -49,7 +49,7 @@ def register(request):
                     profile.save()
 
                     current_site = get_current_site(request)
-                    mail_subject = 'Por favor activa tu cuenta en Vaxi Drez'
+                    mail_subject = 'Por favor activa tu cuenta en PCBuilder'
                     body = render_to_string('accounts/account_verification_email.html', {
                         'user': user,
                         'domain': current_site,
