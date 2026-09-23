@@ -27,10 +27,36 @@ class Product(models.Model):
 
     def get_image_url(self):
         try:
-            if self.images:
+            if self.images and 'pc-part-placeholder' not in self.images.name:
                 return self.images.url
-        except ValueError:
+        except (ValueError, AttributeError):
             pass
+
+        placeholders = {
+            'cpu': 'images/placeholders/cpu.jpg',
+            'video-card': 'images/placeholders/video-card.jpg',
+            'motherboard': 'images/placeholders/motherboard.jpg',
+            'memory': 'images/placeholders/memory.jpg',
+            'internal-hard-drive': 'images/placeholders/internal-hard-drive.jpg',
+            'power-supply': 'images/placeholders/power-supply.jpg',
+            'cpu-cooler': 'images/placeholders/cpu-cooler.jpg',
+            'case': 'images/placeholders/case.jpg',
+        }
+
+        part = (self.part_type or '').strip().lower()
+        if part in placeholders:
+            return static(placeholders[part])
+
+        if self.category:
+            cat_slug = (self.category.slug or '').strip().lower()
+            if cat_slug in placeholders:
+                return static(placeholders[cat_slug])
+
+            cat_name = (self.category.category_name or '').strip().lower()
+            if cat_name in placeholders:
+                return static(placeholders[cat_name])
+
+        # 3. Fallback genérico por si no coincide ninguno
         return static('images/pc-part-placeholder.png')
 
     def get_specs_dict(self):
