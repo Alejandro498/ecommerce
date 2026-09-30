@@ -33,9 +33,17 @@ class Product(models.Model):
             pass
 
         placeholders = {
-            'cpu': 'images/placeholders/cpu.jpg',
-            'video-card': 'images/placeholders/video-card.jpg',
-            'motherboard': 'images/placeholders/motherboard.jpg',
+            'cpu-intel': 'images/placeholders/cpu-intel.jpg',
+            'cpu-amd': 'images/placeholders/cpu-amd.jpg',
+            'video-card-intel': 'images/placeholders/video-card-intel.jpg',
+            'video-card-amd': 'images/placeholders/video-card-amd.jpg',
+            'video-card-nvidia': 'images/placeholders/video-card-nvidia.jpg',
+            'motherboard-intel': 'images/placeholders/motherboard-intel.jpg',
+            'motherboard-asus': 'images/placeholders/motherboard-asus.jpg',
+            'motherboard-asrock': 'images/placeholders/motherboard-asrock.jpg',
+            'motherboard-nzxt': 'images/placeholders/motherboard-nzxt.jpg',
+            'motherboard-gigabyte': 'images/placeholders/motherboard-gigabyte.jpg',
+            'motherboard-msi': 'images/placeholders/motherboard-msi.jpg',
             'memory': 'images/placeholders/memory.jpg',
             'internal-hard-drive': 'images/placeholders/internal-hard-drive.jpg',
             'power-supply': 'images/placeholders/power-supply.jpg',
@@ -44,6 +52,61 @@ class Product(models.Model):
         }
 
         part = (self.part_type or '').strip().lower()
+        
+        # CPU: distinguir Intel y AMD
+        if part == 'cpu':
+            brand = (self.specs.get('brand') or '').strip().lower()
+
+            if brand == 'intel':
+                return static(placeholders['cpu-intel'])
+
+            if brand == 'amd':
+                return static(placeholders['cpu-amd'])
+
+            # CPU sin marca reconocida
+            return static('images/placeholders/cpu.jpg')
+        
+        # GPU: distinguir Intel AMD y Nvidia
+        if part == 'video-card':
+            brand = (self.specs.get('gpu_brand') or '').strip().lower()
+
+            if brand == 'intel':
+                return static(placeholders['video-card-intel'])
+
+            if brand == 'amd':
+                return static(placeholders['video-card-amd'])
+            
+            if brand == 'nvidia':
+                return static(placeholders['video-card-nvidia'])
+
+            # GPU sin marca reconocida
+            return static('images/placeholders/video-card.jpg')
+        
+        # MOTHERBOARD: distinguir entre marcas
+        if part == 'motherboard':
+                brand = (self.specs.get('brand') or '').strip().lower()
+    
+                if brand == 'intel':
+                    return static(placeholders['motherboard-intel'])
+    
+                if brand == 'asus':
+                    return static(placeholders['motherboard-asus'])
+                
+                if brand == 'asrock':
+                    return static(placeholders['motherboard-asrock'])
+                
+                if brand == 'msi':
+                    return static(placeholders['motherboard-msi'])
+                
+                if brand == 'nzxt':
+                    return static(placeholders['motherboard-nzxt'])
+                
+                if brand == 'gigabyte':
+                    return static(placeholders['motherboard-gigabyte'])
+    
+                # MOTHERBOARD sin marca reconocida
+                return static('images/placeholders/motherboard.jpg')
+        
         if part in placeholders:
             return static(placeholders[part])
 
