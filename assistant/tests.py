@@ -1,9 +1,39 @@
 from django.test import TestCase
 from django.urls import reverse
 
+from assistant.fuzzy import score_component, sugeno, trimf, trapmf
 from assistant.views import _build_recommendations, _has_token
 from category.models import Category
 from store.models import Product
+
+
+class FuzzyEngineTests(TestCase):
+    def test_membership_helpers(self):
+        self.assertEqual(trimf(5, 0, 5, 10), 1.0)
+        self.assertEqual(trimf(0, 0, 5, 10), 0.0)
+        self.assertEqual(trapmf(5, 0, 4, 6, 10), 1.0)
+        self.assertAlmostEqual(sugeno([(1.0, 100.0), (1.0, 0.0)]), 50.0)
+
+    def test_fuzzy_scores_gpu_for_gaming(self):
+        category, _ = Category.objects.get_or_create(
+            slug='video-card',
+            defaults={'category_name': 'GPU', 'description': 'GPU'},
+        )
+        product = Product(
+            product_name='GeForce RTX 4070',
+            slug='geforce-rtx-4070-fuzzy',
+            description='RTX',
+            price=15000,
+            stock=3,
+            is_available=True,
+            category=category,
+            part_type='video-card',
+            specs={'chipset': 'GeForce RTX 4070', 'memory': 12, 'gpu_brand': 'NVIDIA'},
+        )
+        score, reasons, parts = score_component(product, 15000, 'gaming')
+        self.assertGreater(score, 0)
+        self.assertEqual(parts['engine'], 'fuzzy-sugeno')
+        self.assertTrue(any('RTX' in r or 'VRAM' in r for r in reasons))
 
 
 class AssistantViewTests(TestCase):
