@@ -11,33 +11,72 @@
             <div class="text-center mb-4">
               <span class="badge badge-primary mb-3">Asistente de compras</span>
               <h2 class="mb-2">Encuentra tu setup ideal</h2>
-              <p class="text-muted mb-0">Responde tus necesidades y te sugerimos componentes alineados a tu presupuesto.</p>
+              <p class="text-muted mb-0">Indica el uso y el presupuesto. El asistente arma PCs completas: prioriza cada pieza con Mamdani y busca la configuración con un algoritmo genético.</p>
             </div>
             <form method="get" action="{% url 'assistant' %}" class="row g-3 align-items-end">
-              <div class="col-md-4"><label class="form-label font-weight-bold" for="id_use_case">Necesidad principal</label>{{ form.use_case }}</div>
-              <div class="col-md-4"><label class="form-label font-weight-bold" for="id_budget">Presupuesto</label>{{ form.budget }}</div>
-              <div class="col-md-3"><label class="form-label font-weight-bold" for="id_category">Categoría</label>{{ form.category }}</div>
-              <div class="col-md-1 text-right"><button type="submit" class="btn btn-primary btn-block">Buscar</button></div>
+              <div class="col-md-5"><label class="form-label font-weight-bold" for="id_use_case">Necesidad principal</label>{{ form.use_case }}</div>
+              <div class="col-md-5"><label class="form-label font-weight-bold" for="id_budget">Presupuesto</label>{{ form.budget }}</div>
+              <div class="col-md-2 text-right"><button type="submit" class="btn btn-primary btn-block">Armar</button></div>
             </form>
           </div>
         </div>
-        <div class="mt-4">
-          <h4 class="mb-3">Recomendaciones para ti</h4>
-          {% if recommendations %}
-            <div class="row">
-              {% for recommendation in recommendations %}
-                {% with product=recommendation.product %}
-                  <div class="col-md-4 mb-3"><div class="card h-100 border-0 shadow-sm">
-                    <a href="{{ product.get_url }}" class="img-wrap p-3 text-center"><img src="{{ product.get_image_url }}" alt="{{ product.product_name }}" class="img-fluid" style="max-height: 180px; object-fit: contain;"></a>
-                    <div class="card-body"><small class="text-muted d-block mb-2">{{ recommendation.reason }}</small><h5 class="card-title mb-2"><a href="{{ product.get_url }}" class="text-dark">{{ product.product_name }}</a></h5><div class="d-flex justify-content-between align-items-center mb-2"><span class="font-weight-bold text-primary">$ {{ product.price }}</span><span class="badge badge-light">Score {{ recommendation.score }}</span></div><p class="text-muted small mb-0">{{ product.category.category_name }}</p></div>
-                  </div></div>
-                {% endwith %}
+
+        {% if priorities %}
+          <div class="mt-4">
+            <h4 class="mb-2">Pesos de prioridad</h4>
+            <p class="text-muted small mb-3">Inferencia Mamdani con centroide. La búsqueda usa selección por ruleta, cruce de componentes y mutación por una pieza compatible. El filtro de socket, energía y tamaño corre antes de la aptitud.</p>
+            <div>
+              {% for item in priorities %}
+                <span class="badge badge-light border mr-1 mb-2">{{ item.label }}: {{ item.prioridad }} ({{ item.score }})</span>
               {% endfor %}
             </div>
+          </div>
+        {% endif %}
+
+        <div class="mt-4">
+          <h4 class="mb-3">Configuraciones recomendadas</h4>
+          {% if builds %}
+            {% for build in builds %}
+              <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">
+                  <strong>Configuración {{ build.rank }}</strong>
+                  <span class="text-primary font-weight-bold">$ {{ build.total_price }} <span class="text-muted font-weight-normal small">· Aptitud {{ build.fitness }}</span></span>
+                </div>
+                <div class="card-body">
+                  <p class="text-muted small mb-3">{{ build.summary }}</p>
+                  <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                      <thead>
+                        <tr>
+                          <th>Pieza</th>
+                          <th>Componente</th>
+                          <th class="text-right">Precio</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for part in build.parts %}
+                          <tr>
+                            <td class="text-nowrap">{{ part.label }}</td>
+                            <td>
+                              {% if part.product.get_url and part.product.get_url != '#' %}
+                                <a href="{{ part.product.get_url }}" class="text-dark">{{ part.product.product_name }}</a>
+                              {% else %}
+                                {{ part.product.product_name }}
+                              {% endif %}
+                            </td>
+                            <td class="text-right text-nowrap">$ {{ part.product.price }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
           {% else %}
-            <div class="alert alert-info">No encontramos recomendaciones con esos criterios. Prueba un presupuesto o categoría distinta.</div>
+            <div class="alert alert-info">{{ notice|default:"No encontramos una configuración compatible con esos criterios. Prueba con otro presupuesto." }}</div>
           {% endif %}
-          <p class="text-muted small mt-2 mb-0">Desglose del ranking: abre la consola del navegador (F12) y busca el grupo <strong>Asistente de compras</strong>.</p>
+          <p class="text-muted small mt-2 mb-0">Desglose del armado: abre la consola del navegador (F12) y busca el grupo <strong>Asistente de compras</strong>.</p>
         </div>
       </div>
     </div>
@@ -57,26 +96,27 @@
     console.warn('Asistente: no se pudo leer el desglose.', error);
     return;
   }
-  var banda = debug.banda_precio || {};
   console.group('%cAsistente de compras', 'color:#0d6efd;font-weight:bold;font-size:13px');
   console.log('%cProcedimiento', 'font-weight:bold');
   (debug.procedimiento || []).forEach(function (step) {
     console.log(step);
   });
-  console.log('%cFiltros', 'font-weight:bold', debug.filtros);
-  console.log('Categorías evaluadas:', debug.categorias_evaluadas);
-  console.log(
-    'Origen del pool:', debug.origen_pool,
-    '| Candidatos:', debug.pool_size + '/' + debug.pool_limit,
-    '| Banda:', banda.label,
-    '| Precio min/max:', banda.precio_min, '/', banda.precio_max
-  );
-  console.log('Fórmula:', debug.formula, '| Top', debug.top_n);
-  console.log('%cTop ' + debug.top_n, 'font-weight:bold');
-  console.table(debug.top || []);
-  console.groupCollapsed('Todos los candidatos evaluados (' + (debug.evaluados || []).length + ')');
-  console.table(debug.evaluados || []);
-  console.groupEnd();
+  console.log('Motor:', debug.engine, '| Defuzzificación:', debug.defuzzificacion, '| Selección:', debug.seleccion);
+  console.log('Cruce:', debug.cruce, '| Mutación:', debug.mutacion);
+  console.log('Filtro:', debug.filtro);
+  console.log('Origen del catálogo:', debug.origen_pool, '| Población:', debug.poblacion, '| Generaciones:', debug.generaciones);
+  console.log('Mejor aptitud por generación:', debug.historial_mejor_aptitud);
+  console.log('%cPrioridades Mamdani', 'font-weight:bold');
+  console.table(debug.prioridades || []);
+  console.log('%cConfiguraciones', 'font-weight:bold');
+  console.table((debug.builds || []).map(function (build) {
+    return { rank: build.rank, aptitud: build.aptitud, total_mxn: build.total_mxn, resumen: build.resumen };
+  }));
+  (debug.builds || []).forEach(function (build) {
+    console.groupCollapsed('Configuración ' + build.rank);
+    console.table(build.piezas || []);
+    console.groupEnd();
+  });
   console.groupEnd();
 })();
 </script>

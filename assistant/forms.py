@@ -23,15 +23,3 @@ class AssistantForm(forms.Form):
         initial=15000,
         widget=forms.NumberInput(attrs={'min': 2000, 'step': 500, 'class': 'form-control'}),
     )
-    category = forms.ChoiceField(
-        label='Categoría (opcional)',
-        required=False,
-        choices=[('', 'Cualquier categoría')],
-        widget=forms.Select(attrs={'class': 'form-control'}),
-    )
-
-    def __init__(self, *args, **kwargs):
-        category_choices = kwargs.pop('category_choices', [])
-        super().__init__(*args, **kwargs)
-        if category_choices:
-            self.fields['category'].choices = category_choices

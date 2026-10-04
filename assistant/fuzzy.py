@@ -1,9 +1,9 @@
 """
-Motor fuzzy (Sugeno de orden cero) para scoring individual de componentes.
+Score Sugeno de un componente suelto.
 
-Sin dependencias externas: memberships triangulares/trapezoidales + reglas
-IF-THEN con AND=min. Pensado para recomendar un producto a la vez; los
-genéticos de builds completos pueden reutilizar `score_component` más adelante.
+El armado de PCs ya no lo usa. La calidad de cada pieza sale del segundo
+Mamdani en assistant/quality_mamdani.py. Este módulo sigue disponible para
+el ranking de piezas sueltas de la primera fase.
 """
 
 from __future__ import annotations

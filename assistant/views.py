@@ -5,12 +5,12 @@ from django.db.models import F, IntegerField, Value
 from django.db.models.functions import Abs
 from django.shortcuts import render
 
-from category.models import Category
 from store.catalog_concurrent import CSV_BY_SLUG, _query_csv
 from store.models import Product
 
 from .forms import AssistantForm
 from .fuzzy import score_component
+from .genetic import recommend_builds
 
 POOL_LIMIT = 200
 TOP_N = 3
@@ -28,20 +28,6 @@ USE_CASE_CATEGORIES = {
     'estudio': ('cpu', 'memory', 'internal-hard-drive'),
     'streaming': ('video-card', 'cpu', 'memory', 'internal-hard-drive'),
 }
-
-
-def _category_choices():
-    categories = Category.objects.all().order_by('category_name')
-    choices = [('', 'Cualquier categoría')] + [
-        (category.slug, category.category_name) for category in categories
-    ]
-    known_slugs = {slug for slug, _label in choices}
-    choices.extend(
-        (slug, label)
-        for slug, (_filename, label) in CSV_BY_SLUG.items()
-        if slug not in known_slugs
-    )
-    return choices
 
 
 def _product_category_slug(product):
@@ -307,30 +293,23 @@ def _build_recommendations(budget, use_case, category_slug=None, with_debug=Fals
 
 
 def assistant(request):
-    defaults = {'use_case': 'gaming', 'category': '', 'budget': 15000}
-    form = AssistantForm(
-        request.GET or None,
-        category_choices=_category_choices(),
-        initial=defaults,
-    )
+    defaults = {'use_case': 'gaming', 'budget': 15000}
+    form = AssistantForm(request.GET or None, initial=defaults)
     selected_use_case = defaults['use_case']
-    selected_category = defaults['category']
     selected_budget = defaults['budget']
 
     if form.is_valid():
         selected_use_case = form.cleaned_data['use_case']
-        selected_category = form.cleaned_data['category']
         selected_budget = form.cleaned_data['budget']
 
-    recommendations, debug = _build_recommendations(
-        selected_budget, selected_use_case, selected_category, with_debug=True,
-    )
+    result = recommend_builds(selected_budget, selected_use_case)
     context = {
         'form': form,
-        'recommendations': recommendations,
-        'assistant_debug': debug,
+        'builds': result['builds'],
+        'priorities': result['priorities'],
+        'notice': result.get('notice') or '',
+        'assistant_debug': result['debug'],
         'selected_use_case': selected_use_case,
-        'selected_category': selected_category,
         'selected_budget': selected_budget,
     }
     return render(request, 'assistant/assistant.html', context)

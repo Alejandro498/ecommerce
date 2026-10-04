@@ -375,3 +375,414 @@ La documentacion actual debe permitir que, al mover el proyecto a otra ubicacion
 --------------------------------------------------------------------
 FIN DE LA DOCUMENTACION
 --------------------------------------------------------------------
+
+--------------------------------------------------------------------
+12. COMO FUNCIONA EL ASISTENTE AHORA (MAMDANI + GENETICO)
+--------------------------------------------------------------------
+
+Esta seccion describe el asistente que esta en produccion en el codigo
+actual. Sustituye, para la pagina /assistant/, la primera fase de ranking
+de piezas sueltas descrita en las secciones 4 y 5. El formulario ya no
+pide categoria: arma una PC completa.
+
+Archivos:
+
+- assistant/forms.py
+  Uso (gaming, trabajo, estudio, streaming) y presupuesto en MXN.
+- assistant/views.py
+  La vista assistant() llama a recommend_builds.
+- assistant/mamdani.py
+  Inferencia Mamdani: pesos de prioridad por pieza.
+- assistant/quality_mamdani.py
+  Segundo Mamdani: adecuacion 0-100 de una pieza concreta para el uso.
+- assistant/fuzzy.py
+  Score Sugeno de la primera fase (piezas sueltas). El armado de PCs ya no lo usa.
+- assistant/compatibility.py
+  Filtro de socket, energia y tamano. Corre antes de la aptitud.
+- assistant/genetic.py
+  Cromosoma, ruleta, cruce, mutacion y busqueda.
+- templates/assistant/assistant.html
+  Muestra los pesos y hasta tres configuraciones.
+
+Si el usuario abre /assistant/ sin enviar el formulario, los defaults son
+gaming y 15000 MXN.
+
+Parametros de la busqueda (assistant/genetic.py):
+
+- poblacion: 20
+- generaciones: 12
+- elitismo: 2
+- probabilidad de mutacion: 0.35
+- tope de candidatos por pieza: 36
+- tope duro de precio de la build: 1.12 veces el presupuesto
+
+--------------------------------------------------------------------
+12.1 PROCEDIMIENTO, DE LA PANTALLA A LA RESPUESTA
+--------------------------------------------------------------------
+
+1. Leer el formulario.
+   Uso y presupuesto. No hay categoria, porque el resultado es la PC
+   entera de ocho piezas.
+
+2. Mamdani (assistant/mamdani.py, infer_priorities).
+   El presupuesto se difumina en bajo, medio, alto y muy alto.
+   El uso queda en el conjunto que el usuario eligio, con pertenencia 1.
+   Las reglas if-then asignan a cada pieza un conjunto de salida
+   (Muy baja, Baja, Media, Alta, Muy alta). La defuzzificacion es el
+   centroide. Sale un numero de 0 a 100 y una etiqueta por pieza.
+
+3. Repartir el presupuesto.
+   El peso de cada pieza se eleva al cuadrado para que "Muy alta" se
+   lleve mucho mas dinero que "Muy baja". Esos cuadrados, normalizados,
+   son la parte del presupuesto que le toca a cada gen.
+
+4. Armar el catalogo de cada gen.
+   Si la base tiene al menos un producto con precio y stock en las ocho
+   categorias, se usa la base. Si falta alguna, se usan los CSV de
+   CleanedCSV/. Cada pieza tiene un tope de precio respecto al
+   presupuesto (GPU 58 %, CPU 42 %, motherboard 32 %, RAM 28 %,
+   almacenamiento 28 %, fuente 24 %, gabinete 22 %, cooler 18 %).
+   De lo que queda se conservan unas 36 opciones: en cada banda de
+   precio, las de mejor spec para el uso.
+
+5. Crear la poblacion.
+   Cada individuo es un cromosoma de ocho genes, en este orden:
+   CPU, GPU, RAM, motherboard, almacenamiento, fuente, gabinete, cooler.
+   Se construye en orden de dependencia (CPU, luego placa del mismo
+   socket, luego gabinete que acepte la placa, RAM compatible, GPU que
+   quepa, fuente que cubra los watts, cooler que quepa y alcance el TDP,
+   disco). Al elegir cada pieza se reserva el precio minimo de las que
+   faltan, para no gastar el presupuesto antes de terminar la PC.
+
+6. Filtro fuerte, antes de la aptitud.
+   diagnose() en assistant/compatibility.py. Si falla, la aptitud es 0
+   y la ruleta no puede elegir esa PC. El cruce que deja una PC rota
+   intenta repararse; si no puede, se copia el padre.
+
+7. Aptitud, solo de las compatibles.
+   80 % calidad de las piezas. Esa calidad es el segundo Mamdani
+   (assistant/quality_mamdani.py): specs de la pieza y el uso, reglas
+   if-then, centroide de 0 a 100. Se multiplica por el peso de prioridad
+   al cuadrado.
+   20 % cercania del total al presupuesto, penalizando pasarse.
+
+8. Doce generaciones.
+   Las dos mejores pasan directo. El resto nace por ruleta, cruce
+   uniforme y mutacion. La mutacion solo acepta un reemplazo que siga
+   siendo compatible y no pase el tope de precio.
+
+9. Respuesta.
+   Se quitan duplicados, se prefieren las que cuestan como maximo el
+   presupuesto, y se muestran hasta tres. La pagina lista los pesos
+   Mamdani y, por configuracion, las ocho piezas, el total, la aptitud
+   y el resumen de compatibilidad.
+
+--------------------------------------------------------------------
+12.2 LOGICA DIFUSA: DOS CAPAS
+--------------------------------------------------------------------
+
+Capa 1, Mamdani de prioridades (assistant/mamdani.py): reparte la
+importancia y el dinero de cada tipo de pieza.
+Capa 2, Mamdani de adecuacion (assistant/quality_mamdani.py): mide que
+tan buena es una pieza concreta para el uso. El genetico combina las
+dos. La primera no elige el modelo. La segunda puntua el modelo.
+
+Membresias de entrada del presupuesto (MXN):
+
+- bajo:      trapezoide, pleno de 0 a 8000, cae a 0 en 18000
+- medio:     triangulo 12000, 25000, 45000
+- alto:      triangulo 35000, 60000, 100000
+- muy alto:  trapezoide, sube desde 75000, pleno desde 110000
+
+El uso no se escribe en lenguaje natural. El usuario elige uno de los
+cuatro casos y ese caso tiene pertenencia 1. Los otros tienen 0.
+
+Membresias de salida, universo 0 a 100:
+
+- Muy baja:  trapezoide, pleno de 0 a 10, cae a 0 en 30
+- Baja:      triangulo 15, 32, 48
+- Media:     triangulo 38, 50, 66
+- Alta:      triangulo 55, 72, 88
+- Muy alta:  trapezoide, sube desde 72, pleno de 88 a 100
+
+Reglas. Hay una tabla por uso, por termino de presupuesto y por pieza
+(_PRIORITY_TABLE en assistant/mamdani.py). Ejemplos de gaming:
+
+- presupuesto bajo:  GPU Muy alta, CPU Alta, almacenamiento Muy baja
+- presupuesto medio: GPU Muy alta, CPU Alta, almacenamiento Baja
+- presupuesto alto:  GPU Muy alta, CPU Muy alta, fuente Muy alta
+
+Trabajo empuja CPU y RAM a Muy alta y deja la GPU en Baja o Media.
+Estudio deja la GPU en Muy baja. Streaming sube CPU y GPU juntas.
+
+Inferencia de una pieza:
+
+1. Se mide la pertenencia del presupuesto a bajo, medio, alto y muy alto.
+2. Cada termino con pertenencia mayor que 0 dispara su regla. La fuerza
+   de la regla es esa pertenencia. El uso ya esta fijo, asi que el AND
+   no la baja mas.
+3. El consecuente (por ejemplo Muy alta) se recorta a la altura de la
+   fuerza. Si dos reglas disparan el mismo consecuente, se queda la
+   fuerza mayor. Si disparan consecuentes distintos, las curvas
+   recortadas se unen con el maximo punto a punto. Eso es la agregacion
+   Mamdani.
+4. Centroide: suma(x * pertenencia(x)) / suma(pertenencia(x)), con x
+   de 0 a 100.
+5. La etiqueta es el conjunto de salida con mayor pertenencia en ese
+   centroide.
+
+Capa 2, segundo Mamdani (component_quality en assistant/quality_mamdani.py).
+Para una pieza ya candidata fuzzifica sus specs y dispara reglas if-then
+segun el uso. La salida usa los mismos conjuntos Muy baja ... Muy alta y
+el mismo centroide. El numero queda entre 0 y 100.
+
+Entradas por pieza:
+
+- GPU: VRAM (baja, media, alta) y clase (bajo, medio, alto, trabajo).
+  En gaming un RTX con VRAM media o alta da Muy alta. Una GT de 2 GB da
+  Baja. En estudio se invierte: la GPU ligera sube y la GPU grande baja.
+- CPU: nucleos (bajos, medios, altos), boost, TDP y si el nombre es X3D
+  o de gama alta. En gaming pocos nucleos da Baja. En trabajo muchos
+  nucleos da Muy alta.
+- RAM: GB (baja, media, alta) y DDR5. En gaming y trabajo 32 GB da Muy
+  alta. En estudio 16 GB da Muy alta y 32 GB solo Media.
+- Almacenamiento: NVMe, SSD o HDD, y capacidad. En gaming un HDD da Muy
+  baja y un NVMe da Alta o Muy alta.
+- Fuente: watts contra un objetivo del uso (estudio 500, gaming 650,
+  streaming 750) y eficiencia gold o mejor.
+- Motherboard: chipset de gama reciente y memoria maxima.
+- Gabinete: airflow o mesh. En estudio pesa mas el formato compacto.
+- Cooler: aire o radiador grande. En estudio el aire puntua mas que un
+  AIO grande.
+
+El precio de la pieza no entra en este Mamdani. Que el total quepa en el
+presupuesto se decide en la aptitud del genetico, para que una pieza mala
+pero barata no le gane a una pieza buena para el uso.
+
+--------------------------------------------------------------------
+12.3 FILTRO DE COMPATIBILIDAD
+--------------------------------------------------------------------
+
+diagnose() revisa la build completa y devuelve codigos. Lista vacia
+significa que pasa. Los codigos son:
+
+- socket: el socket del CPU y el de la placa tienen que existir y ser
+  iguales.
+- ram: generacion DDR permitida por el socket (AM5 y LGA1851 solo DDR5,
+  AM4 y LGA1151 solo DDR4, LGA1700 acepta DDR4 o DDR5), numero de
+  modulos menor o igual a los slots, y GB totales menores o iguales al
+  maximo de la placa.
+- form_factor: el formato de la placa tiene que caber en el maximo del
+  gabinete. Orden de menor a mayor: Mini ITX, Micro ATX, ATX, EATX,
+  XL ATX. Uno mas chico cabe en uno mas grande.
+- gpu_size: el largo de la GPU (si el CSV no trae largo, se asume
+  250 mm) no puede pasar el claro del gabinete. El claro se estima por
+  el tipo: desktop, slim y HTPC unos 205 mm; mini tower unos 280 mm;
+  mid tower unos 370 mm; full tower unos 430 mm.
+- cooler: un aire no trae radiador y se estima en unos 200 W. Un AIO
+  trae radiador (120, 240, 280, 360, 420) y tiene que caber en el claro
+  del gabinete. La capacidad estimada del cooler tiene que cubrir el
+  TDP del CPU.
+- power: watts de la fuente >= TDP del CPU + TDP estimado de la GPU
+  + 100 W de margen. El TDP de la GPU no viene en el CSV; se estima por
+  el nombre del chipset (por ejemplo una 3060 ronda 170 W, una 4090
+  ronda 450 W).
+
+El almacenamiento no tiene restriccion fisica en este catalogo: la
+placa no trae conteo de ranuras M.2.
+
+--------------------------------------------------------------------
+12.4 ALGORITMO GENETICO
+--------------------------------------------------------------------
+
+Cromosoma. Ocho genes, un producto cada uno:
+
+    Gen 1 CPU
+    Gen 2 GPU
+    Gen 3 RAM
+    Gen 4 motherboard
+    Gen 5 almacenamiento
+    Gen 6 fuente
+    Gen 7 gabinete
+    Gen 8 cooler
+
+Seleccion por ruleta. Se suman las aptitudes mayores que 0. Se sortea
+un numero entre 0 y esa suma. Cada individuo ocupa un tramo tan largo
+como su aptitud. Los de aptitud 0 no ocupan tramo. El torneo (k = 3)
+esta implementado en tournament_select y no es el que corre la pagina.
+La pagina usa ruleta.
+
+Cruce uniforme. Para cada gen, el hijo lo copia del padre A o del padre
+B con probabilidad 0.5. Es el intercambio de componentes entre dos
+configuraciones. Despues del cruce se vuelve a correr el filtro. Si la
+mezcla dejo sockets o tamanos incompatibles, _repair cambia la pieza
+conflictiva por otra del pool que restaure la compatibilidad. Si no
+puede, el hijo se reemplaza por el padre.
+
+Mutacion. Con probabilidad 0.35 se elige un gen al azar y se prueba
+hasta diez reemplazos del mismo tipo. Solo se acepta el que deje la
+build compatible y dentro del tope de precio. Si ninguno sirve, el gen
+no cambia.
+
+Elitismo. Las dos mejores de la generacion pasan intactas a la
+siguiente. Los otros 18 lugares son hijos.
+
+Aptitud, en una build que ya paso el filtro:
+
+    peso_i = (prioridad_i) ^ 2
+    calidad_i = adecuacion_mamdani_i / 100
+    si el precio de la pieza pasa 1.65 veces su parte del presupuesto,
+        calidad_i se reduce en proporcion
+    si la prioridad es alta (60 o mas) y la pieza cuesta menos de 0.35
+        de su parte, tambien se reduce, para no elegir un Celeron
+        cuando el peso pedia gastar en CPU
+    calidad = suma(peso_i * calidad_i) / suma(peso_i)
+
+    ratio = total / presupuesto
+    si ratio > 1, el termino de precio cae rapido
+    si ratio < 0.62, tambien baja, por quedarse corta
+    si no, premia acercarse a 0.97
+
+    aptitud = 100 * (0.80 * calidad + 0.20 * precio)
+
+Al cerrar las 12 generaciones se ordena por aptitud. Si hay builds que
+no se pasan del presupuesto, esas salen primero. Se devuelven como
+maximo tres distintas.
+
+--------------------------------------------------------------------
+12.5 CORRIDA DE ESCRITORIO
+--------------------------------------------------------------------
+
+Entrada de papel: uso = gaming, presupuesto = 15000 MXN.
+La corrida real usa 20 individuos y 12 generaciones. Esta es la misma
+mecanica, reducida para seguirla a mano.
+
+Paso 1. Fuzzificar el presupuesto.
+
+A 15000 solo viven dos conjuntos:
+
+- bajo:  pleno hasta 8000 y cae a 0 en 18000.
+         (18000 - 15000) / (18000 - 8000) = 0.30
+- medio: triangulo que sube de 12000 a 25000.
+         (15000 - 12000) / (25000 - 12000) = 0.23
+- alto y muy alto: 0, porque 15000 esta antes de 35000.
+
+El uso gaming tiene pertenencia 1. Trabajo, estudio y streaming tienen 0.
+
+Paso 2. Reglas que disparan.
+
+GPU, presupuesto bajo, fuerza 0.30, consecuente Muy alta.
+GPU, presupuesto medio, fuerza 0.23, consecuente Muy alta.
+Las dos recortan la misma curva. La agregacion se queda con la fuerza
+mayor, 0.30, sobre el trapezoide Muy alta (sube desde 72 y esta en 1
+de 88 a 100). El centroide de esa area cae cerca de 87. La etiqueta
+en 87 es Muy alta.
+
+Almacenamiento, al reves:
+
+- bajo, fuerza 0.30, consecuente Muy baja
+- medio, fuerza 0.23, consecuente Baja
+
+Se superponen las dos curvas recortadas con el maximo, y el centroide
+cae cerca de 21. La etiqueta es Muy baja.
+
+Una corrida real de gaming a 15000 queda asi:
+
+- GPU              87   Muy alta
+- CPU              72   Alta
+- RAM              61   Alta
+- Fuente           61   Alta
+- Cooler           39   Baja
+- Motherboard      39   Baja
+- Gabinete         21   Muy baja
+- Almacenamiento   21   Muy baja
+
+Paso 3. Cuanto dinero le toca a cada pieza.
+
+Peso de reparto = numero al cuadrado.
+GPU: 87^2 = 7569.
+Almacenamiento: 21^2 = 441.
+La suma de los ocho cuadrados ronda 24300.
+Parte de la GPU: 7569 / 24300 es cerca del 31 % de 15000, unos 4700 MXN.
+Parte del disco: unos 270 MXN.
+Por eso la busqueda puede gastar unos 5000 en la GPU y dejar un disco
+barato.
+
+Paso 4. Un cromosoma que si pasa el filtro.
+
+Gen            Pieza                          Check                         Precio
+CPU            Ryzen 5, AM4, TDP 65 W                                       1568
+Motherboard    B550, AM4, ATX, 4 slots        socket AM4 = AM4              2000
+Gabinete       ATX mid tower                  la placa ATX cabe             1398
+RAM            2 x 16 GB DDR4                 AM4 acepta DDR4, 2 <= 4       1840
+GPU            203 mm, unos 200 W             203 cabe en mid tower         5000
+Fuente         750 W                          65 + 200 + 100 = 365 <= 750   1500
+Cooler         aire, sin radiador, ~200 W     cabe y cubre 65 W              978
+Disco          HDD barato                     sin restriccion fisica         280
+
+Total 14564, menor o igual a 15000. diagnose() no devuelve codigos.
+Esta PC si se evalua.
+
+Paso 5. Tres que el filtro tira antes de la aptitud.
+
+- Intel LGA1150 con la B550 AM4. Codigo socket. Aptitud 0. La ruleta
+  no la puede elegir.
+- GPU de 500 mm en el mid tower. Codigo gpu_size.
+- Fuente de 200 W. Codigo power, porque 200 no cubre los 365 W.
+
+Paso 6. Aptitud de la que si paso.
+
+La calidad de cada pieza es el segundo Mamdani, no un score Sugeno.
+La GPU RTX cae en Muy alta (cerca de 90) para gaming. El HDD cae en
+Muy baja (cerca de 15). Esa calidad se multiplica por el peso de
+prioridad al cuadrado: la GPU pesa porque su prioridad es 87 al
+cuadrado, y el disco casi no mueve la aptitud. El total 14564 / 15000
+es 0.97, cerca del objetivo del termino de precio. La aptitud queda
+alrededor de 70 sobre 100. Una PC compatible de 8000 bajaria por
+quedarse corta. Una de 16500 bajaria por pasarse.
+
+Paso 7. Una generacion, en miniatura.
+
+Individuo   Idea                                      Aptitud
+A           Ryzen + GPU de 5000 + 32 GB               72
+B           Ryzen + GPU mas debil + 16 GB             48
+C           la del socket cruzado                     0
+
+Ruleta. Suma de las que sirven: 72 + 48 = 120. Se sortea un numero
+entre 0 y 120.
+
+- de 0 a 72 elige A (60 % de las veces)
+- de 72 a 120 elige B (40 %)
+- C no ocupa ningun tramo
+
+Suponiendo que salen A y B como padres.
+
+Cruce. Cada gen se copia de A o de B con una moneda:
+
+Gen     Moneda    Hijo
+CPU     A         Ryzen de A
+GPU     B         la GPU debil de B
+RAM     A         32 GB de A
+resto   mezcla    pieza de A o de B
+
+Si la GPU de B mide 500 mm y el gabinete vino de A, el filtro marca
+gpu_size. No se calcula aptitud: se cambia esa GPU por otra del pool
+que mida menos que el gabinete. Si no hay ninguna, el hijo se descarta
+y se queda el padre A.
+
+Mutacion. Con probabilidad 0.35 se cambia un gen, por ejemplo el disco,
+por otro disco del pool. Solo se acepta si la PC sigue compatible y el
+total no pasa de 15000 x 1.12 = 16800.
+
+Elitismo. A, con 72, pasa directo a la siguiente generacion. Esto se
+repite 12 veces. Al final se quitan las repetidas y se muestran como
+maximo tres que no se pasen de 15000.
+
+Lo que se ve en pantalla es la del paso 4: socket AM4, placa ATX en
+gabinete ATX, fuente de 750 W para unos 365 W, GPU de 203 mm, total
+14564, aptitud alrededor de 72, y arriba los pesos Mamdani de la tabla
+del paso 2.
+
+--------------------------------------------------------------------
+FIN DE LA SECCION 12
+--------------------------------------------------------------------
