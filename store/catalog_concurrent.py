@@ -144,7 +144,13 @@ def _db_engine_label() -> str:
     return engine or 'database'
 
 
-def _query_database(category_slug: Optional[str], keyword: Optional[str]) -> Dict[str, Any]:
+def _query_database(
+    category_slug: Optional[str],
+    keyword: Optional[str],
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+    spec_filters: Optional[Dict[str, List[str]]] = None,
+) -> Dict[str, Any]:
     close_old_connections()
     started = time.perf_counter()
     label = _db_engine_label()
@@ -156,15 +162,37 @@ def _query_database(category_slug: Optional[str], keyword: Optional[str]) -> Dic
         if getattr(settings, 'CATALOG_SIMULATE_DB_FAILURE', False):
             raise RuntimeError('Fallo simulado de la base de datos (demo)')
 
-        qs = Product.objects.filter(is_available=True).select_related('category')
+        from django.db.models import Min, Max
+        base_qs = Product.objects.filter(is_available=True).select_related('category')
         if category_slug:
             Category.objects.get(slug=category_slug)
-            qs = qs.filter(category__slug=category_slug)
+            base_qs = base_qs.filter(category__slug=category_slug)
         if keyword:
             from django.db.models import Q
-            qs = qs.filter(
+            base_qs = base_qs.filter(
                 Q(description__icontains=keyword) | Q(product_name__icontains=keyword)
-            ).order_by('-created_date')
+            )
+
+        # Límites de precios para la categoría/búsqueda actual (con precio > 0)
+        bounds = base_qs.filter(price__gt=0).aggregate(min_p=Min('price'), max_p=Max('price'))
+        min_bound = bounds['min_p'] if bounds['min_p'] is not None else 0
+        max_bound = bounds['max_p'] if bounds['max_p'] is not None else 0
+
+        # Specs de la categoría para generar dinámicamente las opciones del menú lateral
+        category_specs_list = list(base_qs.values_list('specs', flat=True)) if category_slug else []
+
+        qs = base_qs
+        if min_price is not None:
+            qs = qs.filter(price__gte=min_price)
+        if max_price is not None:
+            qs = qs.filter(price__lte=max_price)
+
+        if spec_filters:
+            from .spec_filters import apply_spec_filters_to_queryset
+            qs = apply_spec_filters_to_queryset(qs, spec_filters)
+
+        if keyword:
+            qs = qs.order_by('-created_date')
         else:
             qs = qs.order_by('id')
 
@@ -176,6 +204,9 @@ def _query_database(category_slug: Optional[str], keyword: Optional[str]) -> Dic
             'label': label,
             'products': products,
             'count': len(products),
+            'min_bound': min_bound,
+            'max_bound': max_bound,
+            'category_specs_list': category_specs_list,
             'elapsed_ms': elapsed_ms,
             'error': None,
             'thread': 'db-worker',
@@ -188,6 +219,9 @@ def _query_database(category_slug: Optional[str], keyword: Optional[str]) -> Dic
             'label': label,
             'products': [],
             'count': 0,
+            'min_bound': 0,
+            'max_bound': 0,
+            'category_specs_list': [],
             'elapsed_ms': elapsed_ms,
             'error': str(exc),
             'thread': 'db-worker',
@@ -215,7 +249,13 @@ def _iter_csv_rows(category_slug: Optional[str]):
                 yield slug, row
 
 
-def _query_csv(category_slug: Optional[str], keyword: Optional[str]) -> Dict[str, Any]:
+def _query_csv(
+    category_slug: Optional[str],
+    keyword: Optional[str],
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+    spec_filters: Optional[Dict[str, List[str]]] = None,
+) -> Dict[str, Any]:
     started = time.perf_counter()
     try:
         items: List[CatalogItem] = []
@@ -249,13 +289,37 @@ def _query_csv(category_slug: Optional[str], keyword: Optional[str]) -> Dict[str
                 )
             )
 
+        # Available items
+        available_items = [item for item in items if item.is_available]
+        category_specs_list = [item.specs for item in available_items if getattr(item, 'specs', None)] if category_slug else []
+
+        # Límites de precios para la categoría/búsqueda actual (con precio > 0)
+        prices = [item.price for item in available_items if item.price > 0]
+        min_bound = min(prices) if prices else 0
+        max_bound = max(prices) if prices else 0
+
+        # Filtrar por precio si se especificó
+        filtered = available_items
+        if min_price is not None:
+            filtered = [item for item in filtered if item.price >= min_price]
+        if max_price is not None:
+            filtered = [item for item in filtered if item.price <= max_price]
+
+        # Filtrar por especificaciones si se especificó
+        if spec_filters:
+            from .spec_filters import apply_spec_filters_to_items
+            filtered = apply_spec_filters_to_items(filtered, spec_filters)
+
         elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
         return {
             'ok': True,
             'source': 'csv',
             'label': 'CSV locales (CleanedCSV/)',
-            'products': items,
-            'count': len(items),
+            'products': filtered,
+            'count': len(filtered),
+            'min_bound': min_bound,
+            'max_bound': max_bound,
+            'category_specs_list': category_specs_list,
             'elapsed_ms': elapsed_ms,
             'error': None,
             'thread': 'csv-worker',
@@ -268,6 +332,9 @@ def _query_csv(category_slug: Optional[str], keyword: Optional[str]) -> Dict[str
             'label': 'CSV locales (CleanedCSV/)',
             'products': [],
             'count': 0,
+            'min_bound': 0,
+            'max_bound': 0,
+            'category_specs_list': [],
             'elapsed_ms': elapsed_ms,
             'error': str(exc),
             'thread': 'csv-worker',
@@ -277,11 +344,15 @@ def _query_csv(category_slug: Optional[str], keyword: Optional[str]) -> Dict[str
 def fetch_catalog_concurrent(
     category_slug: Optional[str] = None,
     keyword: Optional[str] = None,
-) -> Tuple[list, int, Dict[str, Any]]:
+    min_price: Optional[int] = None,
+    max_price: Optional[int] = None,
+    spec_filters: Optional[Dict[str, List[str]]] = None,
+) -> Tuple[list, int, Dict[str, Any], int, int, List[Dict[str, Any]]]:
     """
     Lanza dos hilos en paralelo (DB + CSV) y elige la mejor fuente disponible.
 
     Preferencia: DB si responde OK; si falla o no llega a tiempo, CSV.
+    Retorna: (products, count, trace, min_bound, max_bound, spec_filter_definitions)
     """
     wall_started = time.perf_counter()
     timeout_s = float(getattr(settings, 'CATALOG_DB_TIMEOUT_SECONDS', 3) or 3)
@@ -291,8 +362,8 @@ def fetch_catalog_concurrent(
 
     with ThreadPoolExecutor(max_workers=2, thread_name_prefix='catalog') as pool:
         futures = {
-            pool.submit(_query_database, category_slug, keyword): 'database',
-            pool.submit(_query_csv, category_slug, keyword): 'csv',
+            pool.submit(_query_database, category_slug, keyword, min_price, max_price, spec_filters): 'database',
+            pool.submit(_query_csv, category_slug, keyword, min_price, max_price, spec_filters): 'csv',
         }
         try:
             for future in as_completed(futures, timeout=max(timeout_s, 30)):
@@ -323,6 +394,9 @@ def fetch_catalog_concurrent(
                     'label': _db_engine_label(),
                     'products': [],
                     'count': 0,
+                    'min_bound': 0,
+                    'max_bound': 0,
+                    'category_specs_list': [],
                     'elapsed_ms': round(timeout_s * 1000, 2),
                     'error': f'Timeout / no respondió a tiempo ({exc})',
                     'thread': 'db-worker',
@@ -335,6 +409,9 @@ def fetch_catalog_concurrent(
             'label': _db_engine_label(),
             'products': [],
             'count': 0,
+            'min_bound': 0,
+            'max_bound': 0,
+            'category_specs_list': [],
             'elapsed_ms': 0,
             'error': 'Sin respuesta',
             'thread': 'db-worker',
@@ -346,6 +423,9 @@ def fetch_catalog_concurrent(
             'label': 'CSV locales (CleanedCSV/)',
             'products': [],
             'count': 0,
+            'min_bound': 0,
+            'max_bound': 0,
+            'category_specs_list': [],
             'elapsed_ms': 0,
             'error': 'Sin respuesta',
             'thread': 'csv-worker',
@@ -376,11 +456,28 @@ def fetch_catalog_concurrent(
 
     products = chosen.get('products') or []
     count = chosen.get('count') or len(products)
+    min_bound = chosen.get('min_bound', 0)
+    max_bound = chosen.get('max_bound', 0)
+
+    if min_bound >= max_bound:
+        max_bound = min_bound + 100
+
+    from .spec_filters import extract_category_spec_definitions
+    spec_filter_definitions = extract_category_spec_definitions(
+        category_slug=category_slug,
+        selected_specs=spec_filters or {},
+        specs_iterable=chosen.get('category_specs_list', []),
+    )
 
     trace = {
         'mode': 'concurrent_threads',
         'category_slug': category_slug,
         'keyword': keyword,
+        'min_price': min_price,
+        'max_price': max_price,
+        'spec_filters': spec_filters,
+        'min_bound': min_bound,
+        'max_bound': max_bound,
         'wall_clock_ms': wall_ms,
         'sequential_estimate_ms': sequential_ms,
         'latency_saved_ms': saved_ms,
@@ -412,4 +509,4 @@ def fetch_catalog_concurrent(
             'Abre F12 → Console para ver este rastro de demo.'
         ),
     }
-    return products, count, trace
+    return products, count, trace, min_bound, max_bound, spec_filter_definitions
