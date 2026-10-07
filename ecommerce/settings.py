@@ -217,3 +217,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CATALOG_DB_TIMEOUT_SECONDS = config('CATALOG_DB_TIMEOUT_SECONDS', default=3, cast=float)
 CATALOG_SIMULATE_DB_FAILURE = config('CATALOG_SIMULATE_DB_FAILURE', default=False, cast=bool)
 CATALOG_SIMULATE_DB_DELAY_MS = config('CATALOG_SIMULATE_DB_DELAY_MS', default=0, cast=int)
+
+# Interprete del chat del asistente (solo extrae uso y presupuesto; no recomienda piezas).
+# Compatible con OpenAI y APIs con la misma interfaz (OPENAI_BASE_URL).
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
+OPENAI_MODEL = config('OPENAI_MODEL', default='gemini-3.5-flash-lite')
+OPENAI_BASE_URL = config(
+    'OPENAI_BASE_URL',
+    default='https://generativelanguage.googleapis.com/v1beta/openai',
+)
+OPENAI_TIMEOUT_SECONDS = config('OPENAI_TIMEOUT_SECONDS', default=20, cast=float)
+# Si las reglas locales ya sacan uso+presupuesto, no llama a Gemini (mas rapido).
+INTERPRETER_FAST_PATH = config('INTERPRETER_FAST_PATH', default=True, cast=bool)

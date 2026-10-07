@@ -1,7 +1,9 @@
+import json
 import random
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from assistant.compatibility import diagnose, is_compatible
@@ -14,6 +16,7 @@ from assistant.genetic import (
     roulette_select,
     tournament_select,
 )
+from assistant.interpreter import interpret_message, interpret_with_rules
 from assistant.mamdani import infer_priorities
 from assistant.quality_mamdani import component_quality
 from assistant.views import _build_recommendations, _has_token
@@ -158,26 +161,47 @@ class AssistantViewTests(TestCase):
             specs={'cooler_type': 'Air', 'brand': 'Cooler Master'},
         )
 
-    def test_assistant_page_loads_with_default_recommendations(self):
+    def test_assistant_widget_on_home(self):
+        self.make_compatible_catalog()
+        response = self.client.get(reverse('home'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'pc-assistant-root')
+        self.assertContains(response, 'pc-assistant-fab')
+        self.assertContains(response, 'assistant-widget.js')
+        self.assertContains(response, 'btn-outline-success ml-2">Asistente')
+
+    def test_assistant_page_loads_without_chat_bubble(self):
         self.make_compatible_catalog()
         response = self.client.get(reverse('assistant'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Encuentra tu setup ideal')
-        self.assertContains(response, 'Ryzen 5 5600')
-        self.assertContains(response, 'Configuración 1')
-        self.assertNotContains(response, 'Intel i3 LGA1150')
-        self.assertNotContains(response, 'Fuente 200W insuficiente')
-        self.assertNotContains(response, 'RTX 3060 larga')
+        self.assertContains(response, 'assistant-chat')
+        self.assertContains(response, 'chat-form')
+        self.assertContains(response, 'btn-outline-success ml-2">Asistente')
+        self.assertNotContains(response, 'pc-assistant-fab')
+        self.assertNotContains(response, 'assistant-widget.js')
+        self.assertNotContains(response, 'Ryzen 5 5600')
 
     def test_assistant_page_accepts_filters(self):
         self.make_compatible_catalog()
         response = self.client.get(
             reverse('assistant'),
-            {'use_case': 'gaming', 'budget': 15000},
+            {
+                'use_case': 'gaming',
+                'budget': 15000,
+                'resolution': '1080p',
+                'performance': 'medio',
+                'experience': 'principiante',
+                'brand': 'amd',
+            },
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Ryzen 5 5600')
         self.assertContains(response, 'Pesos de prioridad')
+        self.assertContains(response, 'id_resolution')
+        self.assertNotContains(response, 'Intel i3 LGA1150')
+        self.assertNotContains(response, 'Fuente 200W insuficiente')
+        self.assertNotContains(response, 'RTX 3060 larga')
 
     def test_keyword_matching_uses_word_boundaries(self):
         self.assertFalse(_has_token('18gb ddr4', '8gb'))
@@ -287,11 +311,108 @@ class AssistantViewTests(TestCase):
 
     def test_assistant_page_embeds_console_debug(self):
         self.make_compatible_catalog()
-        response = self.client.get(reverse('assistant'))
+        response = self.client.get(
+            reverse('assistant'),
+            {'use_case': 'gaming', 'budget': 15000},
+        )
         self.assertContains(response, 'assistant-debug-data')
         self.assertContains(response, 'mamdani+genetic')
         self.assertContains(response, 'ruleta')
         self.assertContains(response, 'Asistente de compras')
+
+    def test_add_build_to_cart_from_assistant(self):
+        self.make_compatible_catalog()
+        response = self.client.get(
+            reverse('assistant'),
+            {
+                'use_case': 'gaming',
+                'budget': 15000,
+                'resolution': '1080p',
+                'performance': 'medio',
+                'experience': 'medio',
+                'brand': 'amd',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Agregar esta configuración al carrito')
+        builds = response.context['builds']
+        self.assertTrue(builds)
+        self.assertTrue(builds[0]['can_add_to_cart'])
+        product_ids = builds[0]['product_ids']
+        self.assertEqual(len(product_ids), 8)
+
+        from carts.models import CartItem
+
+        add = self.client.post(reverse('add_build_cart'), {'product_id': product_ids})
+        self.assertEqual(add.status_code, 302)
+        self.assertEqual(add.url, reverse('cart'))
+        self.assertEqual(CartItem.objects.count(), 8)
+
+    @override_settings(OPENAI_API_KEY='', INTERPRETER_FAST_PATH=True)
+    def test_chat_endpoint_interprets_and_builds(self):
+        self.make_compatible_catalog()
+        interpret = self.client.post(
+            reverse('assistant_chat'),
+            data=json.dumps({
+                'message': 'Quiero una PC para jugar, tengo 15000 pesos',
+                'history': [],
+                'build': False,
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(interpret.status_code, 200)
+        parsed = interpret.json()
+        self.assertTrue(parsed['ok'])
+        self.assertTrue(parsed['ready'])
+        self.assertEqual(parsed['use_case'], 'gaming')
+        self.assertEqual(parsed['budget'], 15000)
+        self.assertIn(parsed['interpreter'], ('rules', 'rules-fast'))
+        self.assertEqual(parsed['builds'], [])
+
+        response = self.client.post(
+            reverse('assistant_chat'),
+            data=json.dumps({
+                'build': True,
+                'use_case': parsed['use_case'],
+                'budget': parsed['budget'],
+                'prefs': parsed.get('prefs') or {},
+                'interpreter': parsed['interpreter'],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['builds'])
+        self.assertIn('prefs', payload)
+        self.assertEqual(payload['prefs'].get('resolution'), '1080p')
+        top = payload['builds'][0]
+        self.assertIn('score', top)
+        self.assertEqual(top['score'], top['fitness'])
+        self.assertGreater(top['score'], 0)
+        self.assertIn('Score', payload.get('reply') or '')
+        names = {
+            part['name']
+            for build in payload['builds']
+            for part in build['parts']
+        }
+        self.assertIn('Ryzen 5 5600', names)
+        self.assertNotIn('Intel i3 LGA1150', names)
+
+    @override_settings(OPENAI_API_KEY='')
+    def test_chat_endpoint_asks_when_budget_missing(self):
+        response = self.client.post(
+            reverse('assistant_chat'),
+            data=json.dumps({'message': 'Quiero una PC gamer'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['ok'])
+        self.assertFalse(payload['ready'])
+        self.assertEqual(payload['use_case'], 'gaming')
+        self.assertIsNone(payload['budget'])
+        self.assertEqual(payload['builds'], [])
+        self.assertIn('gastar', payload['reply'].lower())
 
 
 def _part(name, price, slot, specs):
@@ -428,6 +549,38 @@ class MamdaniAndBuildTests(TestCase):
         too_long['video-card'] = _pools['video-card'][1]
         self.assertIn('gpu_size', diagnose(too_long))
 
+        single_stick = dict(good)
+        single_stick['memory'] = _part(
+            'RAM 1 stick',
+            700,
+            'memory',
+            {'speed': [4, 3200], 'module_count': 1, 'module_capacity_gb': 16},
+        )
+        self.assertIn('ram_channels', diagnose(single_stick, {'performance': 'alto'}))
+
+        hdd_build = dict(good)
+        hdd_build['internal-hard-drive'] = _part(
+            'HDD 1TB',
+            500,
+            'internal-hard-drive',
+            {'capacity': 1000, 'type': 'HDD', 'interface': 'SATA'},
+        )
+        self.assertIn('storage', diagnose(hdd_build, {'resolution': '1440p', 'performance': 'alto'}))
+
+        brand_mismatch = dict(good)
+        self.assertIn('brand', diagnose(brand_mismatch, {'brand': 'intel'}))
+        self.assertEqual(diagnose(brand_mismatch, {'brand': 'amd'}), [])
+
+        legacy = dict(good)
+        legacy['cpu'] = _pools['cpu'][1]
+        legacy['motherboard'] = _part(
+            'H81 legacy',
+            900,
+            'motherboard',
+            {'socket': 'LGA1150', 'form_factor': 'ATX', 'max_memory': 32, 'memory_slots': 2},
+        )
+        self.assertIn('legacy', diagnose(legacy, {'experience': 'principiante'}))
+
     def test_genetic_search_returns_only_compatible_parts(self):
         pools, _good, _storage_b = _sample_pools()
         result = recommend_builds(15000, 'gaming', pools=pools, seed=7, generations=6, population_size=8)
@@ -494,3 +647,86 @@ class MamdaniAndBuildTests(TestCase):
             if winner['internal-hard-drive'] is good['internal-hard-drive']:
                 wins += 1
         self.assertGreater(wins, 20)
+
+
+class InterpreterTests(TestCase):
+    def test_rules_extract_use_and_budget(self):
+        parsed = interpret_with_rules('Quiero jugar a 1080p, tengo como 18 mil')
+        self.assertEqual(parsed['use_case'], 'gaming')
+        self.assertEqual(parsed['budget'], 18000)
+        self.assertTrue(parsed['ready'])
+        self.assertEqual(parsed['source'], 'rules')
+        self.assertEqual(parsed['prefs']['resolution'], '1080p')
+
+    def test_rules_extract_extra_prefs(self):
+        parsed = interpret_with_rules(
+            'Quiero jugar GTA a 1440 alto, soy principiante, prefiero AMD, traigo 18000'
+        )
+        self.assertEqual(parsed['use_case'], 'gaming')
+        self.assertEqual(parsed['budget'], 18000)
+        self.assertEqual(parsed['prefs']['resolution'], '1440p')
+        self.assertEqual(parsed['prefs']['performance'], 'alto')
+        self.assertEqual(parsed['prefs']['experience'], 'principiante')
+        self.assertEqual(parsed['prefs']['brand'], 'amd')
+
+    @override_settings(OPENAI_API_KEY='test-key', INTERPRETER_FAST_PATH=True)
+    def test_fast_path_skips_llm_when_rules_are_enough(self):
+        parsed = interpret_message('Quiero jugar a 1080p, tengo como 18 mil')
+        self.assertEqual(parsed['source'], 'rules-fast')
+        self.assertEqual(parsed['use_case'], 'gaming')
+        self.assertEqual(parsed['budget'], 18000)
+        self.assertTrue(parsed['ready'])
+
+    def test_rules_ask_when_incomplete(self):
+        parsed = interpret_with_rules('PC para la universidad')
+        self.assertEqual(parsed['use_case'], 'estudio')
+        self.assertFalse(parsed['ready'])
+        self.assertIn('gastar', (parsed['ask'] or '').lower())
+
+    def test_rules_remember_use_case_across_turns(self):
+        history = [
+            {'role': 'user', 'content': 'Quiero jugar Gta V a 1080 a 60 fps'},
+            {'role': 'assistant', 'content': '¿Cuál es tu presupuesto?'},
+        ]
+        parsed = interpret_with_rules('25200', history)
+        self.assertEqual(parsed['use_case'], 'gaming')
+        self.assertEqual(parsed['budget'], 25200)
+        self.assertTrue(parsed['ready'])
+
+    @override_settings(
+        OPENAI_API_KEY='test-key',
+        OPENAI_BASE_URL='https://example.test/v1',
+        INTERPRETER_FAST_PATH=False,
+    )
+    def test_llm_path_uses_json_only(self):
+        fake = {
+            'choices': [{
+                'message': {
+                    'content': json.dumps({
+                        'use_case': 'trabajo',
+                        'budget': 35000,
+                        'ready': True,
+                        'ask': None,
+                        'summary': 'Trabajo con 35000 MXN',
+                    }),
+                },
+            }],
+        }
+
+        class FakeResponse:
+            status_code = 200
+            text = 'ok'
+
+            def json(self):
+                return fake
+
+        with patch('assistant.interpreter.requests.post', return_value=FakeResponse()) as mocked:
+            parsed = interpret_message('Necesito editar video con 35k', force_llm=True)
+        self.assertEqual(parsed['source'], 'llm')
+        self.assertEqual(parsed['use_case'], 'trabajo')
+        self.assertEqual(parsed['budget'], 35000)
+        self.assertTrue(parsed['ready'])
+        self.assertTrue(mocked.called)
+        body = mocked.call_args.kwargs['json']
+        self.assertEqual(body['response_format'], {'type': 'json_object'})
+        self.assertIn('NO recomiendes', body['messages'][0]['content'])

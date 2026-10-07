@@ -8,6 +8,31 @@ USE_CASE_CHOICES = [
     ('streaming', 'Streaming / contenido'),
 ]
 
+RESOLUTION_CHOICES = [
+    ('office', 'Oficina / básico'),
+    ('1080p', '1080p'),
+    ('1440p', '1440p / 2K'),
+    ('4k', '4K'),
+]
+
+PERFORMANCE_CHOICES = [
+    ('bajo', 'Tranquilo / entrada'),
+    ('medio', 'Equilibrado'),
+    ('alto', 'Alto / exigente'),
+]
+
+EXPERIENCE_CHOICES = [
+    ('principiante', 'Principiante'),
+    ('medio', 'Intermedio'),
+    ('avanzado', 'Avanzado'),
+]
+
+BRAND_CHOICES = [
+    ('any', 'Me da igual'),
+    ('amd', 'AMD'),
+    ('intel', 'Intel'),
+]
+
 
 class AssistantForm(forms.Form):
     use_case = forms.ChoiceField(
@@ -22,4 +47,32 @@ class AssistantForm(forms.Form):
         max_value=200000,
         initial=15000,
         widget=forms.NumberInput(attrs={'min': 2000, 'step': 500, 'class': 'form-control'}),
+    )
+    resolution = forms.ChoiceField(
+        label='Resolución / uso de pantalla',
+        choices=RESOLUTION_CHOICES,
+        initial='1080p',
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control'}),
+    )
+    performance = forms.ChoiceField(
+        label='Nivel de rendimiento',
+        choices=PERFORMANCE_CHOICES,
+        initial='medio',
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control'}),
+    )
+    experience = forms.ChoiceField(
+        label='Tu experiencia',
+        choices=EXPERIENCE_CHOICES,
+        initial='medio',
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control'}),
+    )
+    brand = forms.ChoiceField(
+        label='Marca de CPU',
+        choices=BRAND_CHOICES,
+        initial='any',
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control'}),
     )

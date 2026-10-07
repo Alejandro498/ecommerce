@@ -107,7 +107,10 @@ Abre http://127.0.0.1:8000/
 | --- | --- |
 | Inicio | http://127.0.0.1:8000/ |
 | Tienda | http://127.0.0.1:8000/store/ |
+| Asistente (chat + armado) | http://127.0.0.1:8000/assistant/ |
 | Admin | http://127.0.0.1:8000/securelogin/ |
+
+El asistente tiene un chat: el LLM solo interpreta uso y presupuesto; la PC la arma Mamdani + el genético. En `.env` puedes poner `OPENAI_API_KEY`. Sin clave, el chat usa un respaldo por palabras clave.
 
 Para detenerlo: `Ctrl+C` en la terminal.
 

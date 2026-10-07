@@ -6,76 +6,117 @@
   <div class="container">
     <div class="row justify-content-center">
       <div class="col-lg-10">
-        <div class="card shadow-sm border-0">
+        <div class="card shadow-sm border-0 mb-4">
           <div class="card-body p-4 p-md-5">
             <div class="text-center mb-4">
               <span class="badge badge-primary mb-3">Asistente de compras</span>
               <h2 class="mb-2">Encuentra tu setup ideal</h2>
-              <p class="text-muted mb-0">Indica el uso y el presupuesto. El asistente arma PCs completas: prioriza cada pieza con Mamdani y busca la configuración con un algoritmo genético.</p>
+              <p class="text-muted mb-0">Cuéntame para qué la quieres y cuánto puedes gastar. Te armo opciones que quepan en tu presupuesto.</p>
             </div>
-            <form method="get" action="{% url 'assistant' %}" class="row g-3 align-items-end">
-              <div class="col-md-5"><label class="form-label font-weight-bold" for="id_use_case">Necesidad principal</label>{{ form.use_case }}</div>
-              <div class="col-md-5"><label class="form-label font-weight-bold" for="id_budget">Presupuesto</label>{{ form.budget }}</div>
-              <div class="col-md-2 text-right"><button type="submit" class="btn btn-primary btn-block">Armar</button></div>
-            </form>
+
+            <div id="assistant-chat" class="border rounded p-3 mb-4" style="background:#f8fafc;">
+              <div id="chat-log" class="mb-3" style="min-height:180px;max-height:360px;overflow-y:auto;">
+                <div class="alert alert-light border mb-2">
+                  Hola. ¿Para qué quieres la PC y más o menos cuánto puedes gastar?<br>
+                  Por ejemplo: <em>“Quiero jugar GTA a 1080 alto, soy principiante, prefiero AMD, traigo 18 mil”</em>
+                </div>
+              </div>
+              <form id="chat-form" class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-md-10">
+                  <label class="form-label font-weight-bold" for="chat-input">Tu mensaje</label>
+                  <input id="chat-input" class="form-control" type="text" maxlength="500" placeholder="Ej. PC para la uni con 8 mil" autocomplete="off" required>
+                </div>
+                <div class="col-md-2">
+                  <button id="chat-send" type="submit" class="btn btn-success btn-block">Enviar</button>
+                </div>
+              </form>
+              <p id="chat-status" class="small mt-2 mb-0 font-weight-bold"></p>
+            </div>
+
+            <details class="mb-0">
+              <summary class="font-weight-bold mb-3" style="cursor:pointer;">O usar el formulario clásico</summary>
+              <form method="get" action="{% url 'assistant' %}" class="row g-3 align-items-end">
+                <div class="col-md-4 mb-2"><label class="form-label font-weight-bold" for="id_use_case">Necesidad</label>{{ form.use_case }}</div>
+                <div class="col-md-4 mb-2"><label class="form-label font-weight-bold" for="id_budget">Presupuesto</label>{{ form.budget }}</div>
+                <div class="col-md-4 mb-2"><label class="form-label font-weight-bold" for="id_resolution">Resolución</label>{{ form.resolution }}</div>
+                <div class="col-md-4 mb-2"><label class="form-label font-weight-bold" for="id_performance">Rendimiento</label>{{ form.performance }}</div>
+                <div class="col-md-4 mb-2"><label class="form-label font-weight-bold" for="id_experience">Experiencia</label>{{ form.experience }}</div>
+                <div class="col-md-4 mb-2"><label class="form-label font-weight-bold" for="id_brand">Marca CPU</label>{{ form.brand }}</div>
+                <div class="col-md-12 text-right"><button type="submit" class="btn btn-primary">Armar</button></div>
+              </form>
+            </details>
           </div>
         </div>
 
-        {% if priorities %}
-          <div class="mt-4">
-            <h4 class="mb-2">Pesos de prioridad</h4>
-            <p class="text-muted small mb-3">Inferencia Mamdani con centroide. La búsqueda usa selección por ruleta, cruce de componentes y mutación por una pieza compatible. El filtro de socket, energía y tamaño corre antes de la aptitud.</p>
-            <div>
-              {% for item in priorities %}
-                <span class="badge badge-light border mr-1 mb-2">{{ item.label }}: {{ item.prioridad }} ({{ item.score }})</span>
-              {% endfor %}
-            </div>
+        <div id="priority-block" class="mt-2" {% if not priorities %}style="display:none;"{% endif %}>
+          <h4 class="mb-2">Pesos de prioridad</h4>
+          <p class="text-muted small mb-3">Prioridad que le dimos a cada pieza según tu uso y presupuesto.</p>
+          <div id="priority-badges">
+            {% for item in priorities %}
+              <span class="badge badge-light border mr-1 mb-2">{{ item.label }}: {{ item.prioridad }} ({{ item.score }})</span>
+            {% endfor %}
           </div>
-        {% endif %}
+        </div>
 
         <div class="mt-4">
           <h4 class="mb-3">Configuraciones recomendadas</h4>
-          {% if builds %}
-            {% for build in builds %}
-              <div class="card border-0 shadow-sm mb-4">
-                <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">
-                  <strong>Configuración {{ build.rank }}</strong>
-                  <span class="text-primary font-weight-bold">$ {{ build.total_price }} <span class="text-muted font-weight-normal small">· Aptitud {{ build.fitness }}</span></span>
-                </div>
-                <div class="card-body">
-                  <p class="text-muted small mb-3">{{ build.summary }}</p>
-                  <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                      <thead>
-                        <tr>
-                          <th>Pieza</th>
-                          <th>Componente</th>
-                          <th class="text-right">Precio</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {% for part in build.parts %}
+          <div id="builds-container">
+            {% if builds %}
+              {% for build in builds %}
+                <div class="card border-0 shadow-sm mb-4">
+                  <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">
+                    <strong>Configuración {{ build.rank }}</strong>
+                    <span class="text-primary font-weight-bold">$ {{ build.total_price }} <span class="text-muted font-weight-normal small">· Aptitud {{ build.fitness }}</span></span>
+                  </div>
+                  <div class="card-body">
+                    <p class="text-muted small mb-3">{{ build.summary }}</p>
+                    <div class="table-responsive">
+                      <table class="table table-sm mb-0">
+                        <thead>
                           <tr>
-                            <td class="text-nowrap">{{ part.label }}</td>
-                            <td>
-                              {% if part.product.get_url and part.product.get_url != '#' %}
-                                <a href="{{ part.product.get_url }}" class="text-dark">{{ part.product.product_name }}</a>
-                              {% else %}
-                                {{ part.product.product_name }}
-                              {% endif %}
-                            </td>
-                            <td class="text-right text-nowrap">$ {{ part.product.price }}</td>
+                            <th>Pieza</th>
+                            <th>Componente</th>
+                            <th class="text-right">Precio</th>
                           </tr>
+                        </thead>
+                        <tbody>
+                          {% for part in build.parts %}
+                            <tr>
+                              <td class="text-nowrap">{{ part.label }}</td>
+                              <td>
+                                {% if part.product.get_url and part.product.get_url != '#' %}
+                                  <a href="{{ part.product.get_url }}" class="text-dark">{{ part.product.product_name }}</a>
+                                {% else %}
+                                  {{ part.product.product_name }}
+                                {% endif %}
+                              </td>
+                              <td class="text-right text-nowrap">$ {{ part.product.price }}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                    {% if build.can_add_to_cart %}
+                      <form method="post" action="{% url 'add_build_cart' %}" class="mt-3 mb-0">
+                        {% csrf_token %}
+                        {% for product_id in build.product_ids %}
+                          <input type="hidden" name="product_id" value="{{ product_id }}">
                         {% endfor %}
-                      </tbody>
-                    </table>
+                        <button type="submit" class="btn btn-success btn-sm">
+                          Agregar esta configuración al carrito
+                        </button>
+                      </form>
+                    {% else %}
+                      <p class="text-muted small mt-3 mb-0">Esta opción no se puede meter al carrito porque alguna pieza no está en la tienda.</p>
+                    {% endif %}
                   </div>
                 </div>
-              </div>
-            {% endfor %}
-          {% else %}
-            <div class="alert alert-info">{{ notice|default:"No encontramos una configuración compatible con esos criterios. Prueba con otro presupuesto." }}</div>
-          {% endif %}
+              {% endfor %}
+            {% else %}
+              <div id="builds-empty" class="alert alert-info">{{ notice|default:"Escribe en el chat o usa el formulario para armar una PC." }}</div>
+            {% endif %}
+          </div>
           <p class="text-muted small mt-2 mb-0">Desglose del armado: abre la consola del navegador (F12) y busca el grupo <strong>Asistente de compras</strong>.</p>
         </div>
       </div>
@@ -85,39 +126,206 @@
 {{ assistant_debug|json_script:"assistant-debug-data" }}
 <script>
 (function () {
-  var node = document.getElementById('assistant-debug-data');
-  if (!node) {
-    return;
+  var chatUrl = "{% url 'assistant_chat' %}";
+  var addBuildUrl = "{% url 'add_build_cart' %}";
+  var log = document.getElementById('chat-log');
+  var form = document.getElementById('chat-form');
+  var input = document.getElementById('chat-input');
+  var status = document.getElementById('chat-status');
+  var sendBtn = document.getElementById('chat-send');
+  var history = [];
+  var debugNode = document.getElementById('assistant-debug-data');
+
+  function csrfToken() {
+    var node = document.querySelector('[name=csrfmiddlewaretoken]');
+    return node ? node.value : '';
   }
-  var debug;
-  try {
-    debug = JSON.parse(node.textContent);
-  } catch (error) {
-    console.warn('Asistente: no se pudo leer el desglose.', error);
-    return;
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
-  console.group('%cAsistente de compras', 'color:#0d6efd;font-weight:bold;font-size:13px');
-  console.log('%cProcedimiento', 'font-weight:bold');
-  (debug.procedimiento || []).forEach(function (step) {
-    console.log(step);
-  });
-  console.log('Motor:', debug.engine, '| Defuzzificación:', debug.defuzzificacion, '| Selección:', debug.seleccion);
-  console.log('Cruce:', debug.cruce, '| Mutación:', debug.mutacion);
-  console.log('Filtro:', debug.filtro);
-  console.log('Origen del catálogo:', debug.origen_pool, '| Población:', debug.poblacion, '| Generaciones:', debug.generaciones);
-  console.log('Mejor aptitud por generación:', debug.historial_mejor_aptitud);
-  console.log('%cPrioridades Mamdani', 'font-weight:bold');
-  console.table(debug.prioridades || []);
-  console.log('%cConfiguraciones', 'font-weight:bold');
-  console.table((debug.builds || []).map(function (build) {
-    return { rank: build.rank, aptitud: build.aptitud, total_mxn: build.total_mxn, resumen: build.resumen };
-  }));
-  (debug.builds || []).forEach(function (build) {
-    console.groupCollapsed('Configuración ' + build.rank);
-    console.table(build.piezas || []);
+
+  function cartButtonHtml(build) {
+    if (!build.can_add_to_cart || !(build.product_ids || []).length) {
+      return '<p class="text-muted small mt-3 mb-0">Esta opción no se puede meter al carrito porque alguna pieza no está en la tienda.</p>';
+    }
+    var inputs = (build.product_ids || []).map(function (id) {
+      return '<input type="hidden" name="product_id" value="' + escapeHtml(id) + '">';
+    }).join('');
+    return (
+      '<form method="post" action="' + addBuildUrl + '" class="mt-3 mb-0">' +
+        '<input type="hidden" name="csrfmiddlewaretoken" value="' + escapeHtml(csrfToken()) + '">' +
+        inputs +
+        '<button type="submit" class="btn btn-success btn-sm">Agregar esta configuración al carrito</button>' +
+      '</form>'
+    );
+  }
+
+  function appendBubble(text, who) {
+    var wrap = document.createElement('div');
+    wrap.className = 'alert mb-2 ' + (who === 'user' ? 'alert-primary' : 'alert-light border');
+    wrap.textContent = text;
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function money(value) {
+    return '$ ' + Number(value || 0).toLocaleString('es-MX');
+  }
+
+  function renderPriorities(items) {
+    var block = document.getElementById('priority-block');
+    var badges = document.getElementById('priority-badges');
+    if (!block || !badges) return;
+    badges.innerHTML = '';
+    (items || []).forEach(function (item) {
+      var span = document.createElement('span');
+      span.className = 'badge badge-light border mr-1 mb-2';
+      span.textContent = item.label + ': ' + item.prioridad + ' (' + item.score + ')';
+      badges.appendChild(span);
+    });
+    block.style.display = items && items.length ? '' : 'none';
+  }
+
+  function renderBuilds(builds) {
+    var container = document.getElementById('builds-container');
+    if (!container) return;
+    if (!builds || !builds.length) {
+      container.innerHTML = '<div class="alert alert-info">No encontramos una configuración compatible con esos criterios.</div>';
+      return;
+    }
+    container.innerHTML = builds.map(function (build) {
+      var rows = (build.parts || []).map(function (part) {
+        var name = part.url && part.url !== '#'
+          ? '<a href="' + escapeHtml(part.url) + '" class="text-dark">' + escapeHtml(part.name) + '</a>'
+          : escapeHtml(part.name);
+        return '<tr><td class="text-nowrap">' + escapeHtml(part.label) + '</td><td>' + name + '</td><td class="text-right text-nowrap">' + money(part.price) + '</td></tr>';
+      }).join('');
+      return (
+        '<div class="card border-0 shadow-sm mb-4">' +
+          '<div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center">' +
+            '<strong>Configuración ' + escapeHtml(build.rank) + '</strong>' +
+            '<span class="text-primary font-weight-bold">' + money(build.total_price) +
+            ' <span class="text-muted font-weight-normal small">· Aptitud ' + escapeHtml(build.fitness) + '</span></span>' +
+          '</div>' +
+          '<div class="card-body">' +
+            '<p class="text-muted small mb-3">' + escapeHtml(build.summary || '') + '</p>' +
+            '<div class="table-responsive"><table class="table table-sm mb-0">' +
+            '<thead><tr><th>Pieza</th><th>Componente</th><th class="text-right">Precio</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody></table></div>' +
+            cartButtonHtml(build) +
+          '</div>' +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  function printDebug(debug) {
+    if (!debug) return;
+    if (debugNode) {
+      debugNode.textContent = JSON.stringify(debug);
+    }
+    console.group('%cAsistente de compras', 'color:#0d6efd;font-weight:bold;font-size:13px');
+    console.log('%cProcedimiento', 'font-weight:bold');
+    (debug.procedimiento || []).forEach(function (step) { console.log(step); });
+    console.log('Motor:', debug.engine, '| Selección:', debug.seleccion, '| Interprete chat: ver respuesta JSON');
+    console.log('%cPrioridades Mamdani', 'font-weight:bold');
+    console.table(debug.prioridades || []);
+    console.log('%cConfiguraciones', 'font-weight:bold');
+    console.table((debug.builds || []).map(function (build) {
+      return { rank: build.rank, aptitud: build.aptitud, total_mxn: build.total_mxn, resumen: build.resumen };
+    }));
     console.groupEnd();
-  });
-  console.groupEnd();
+  }
+
+  function postChat(body) {
+    return fetch(chatUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify(body)
+    }).then(function (response) {
+      return response.json().then(function (data) {
+        return { ok: response.ok, data: data };
+      });
+    });
+  }
+
+  function markStatus(engine, extra) {
+    status.textContent = extra;
+    status.className = 'small mt-2 mb-0 text-muted';
+    console.log('Asistente motor interno:', engine);
+  }
+
+  if (form) {
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var text = (input.value || '').trim();
+      if (!text) return;
+      appendBubble(text, 'user');
+      history.push({ role: 'user', content: text });
+      input.value = '';
+      status.textContent = 'Interpretando…';
+      status.className = 'small mt-2 mb-0 font-weight-bold text-muted';
+      sendBtn.disabled = true;
+
+      postChat({ message: text, history: history, build: false })
+        .then(function (result) {
+          var data = result.data || {};
+          var engine = data.interpreter || '?';
+          var reply = data.reply || 'No pude procesar el mensaje.';
+          appendBubble(reply, 'bot');
+          history.push({ role: 'assistant', content: reply });
+          console.log('Asistente interprete:', engine, data);
+
+          if (!data.ready) {
+            markStatus(engine, 'Te falta un dato para armarte la PC');
+            return null;
+          }
+
+          markStatus(engine, 'Armando tus opciones…');
+          return postChat({
+            build: true,
+            use_case: data.use_case,
+            budget: data.budget,
+            prefs: data.prefs || {},
+            interpreter: engine,
+            message: text,
+            history: history
+          }).then(function (buildResult) {
+            var built = (buildResult && buildResult.data) || {};
+            if (built.reply) {
+              appendBubble(built.reply, 'bot');
+              history.push({ role: 'assistant', content: built.reply });
+            }
+            renderPriorities(built.priorities || []);
+            renderBuilds(built.builds || []);
+            printDebug(built.debug);
+            markStatus(engine, 'Listo. Si quieres, cambia el uso o el presupuesto y lo rearmamos.');
+          });
+        })
+        .catch(function (error) {
+          appendBubble('Uy, se me fue la conexión. ¿Lo intentamos de nuevo?', 'bot');
+          status.textContent = String(error);
+        })
+        .finally(function () {
+          sendBtn.disabled = false;
+          input.focus();
+        });
+    });
+  }
+
+  if (debugNode) {
+    try {
+      printDebug(JSON.parse(debugNode.textContent));
+    } catch (error) {}
+  }
 })();
 </script>
 {% endblock %}

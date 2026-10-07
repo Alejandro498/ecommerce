@@ -1,0 +1,373 @@
+{% load static %}
+<style>
+  @keyframes pc-assistant-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.55), 0 12px 32px rgba(25, 135, 84, 0.42); }
+    70% { box-shadow: 0 0 0 18px rgba(25, 135, 84, 0), 0 12px 32px rgba(25, 135, 84, 0.42); }
+    100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0), 0 12px 32px rgba(25, 135, 84, 0.42); }
+  }
+  @keyframes pc-assistant-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  @keyframes pc-assistant-tip-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #pc-assistant-fab.pc-assistant-fab {
+    position: fixed !important;
+    right: 22px !important;
+    bottom: 96px !important;
+    left: auto !important;
+    z-index: 2147483000 !important;
+    width: 84px !important;
+    height: 84px !important;
+    border: 0 !important;
+    border-radius: 50% !important;
+    background: #198754 !important;
+    color: #fff !important;
+    box-shadow: 0 12px 32px rgba(25, 135, 84, 0.42) !important;
+    cursor: pointer !important;
+    font-size: 1.9rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    animation: pc-assistant-pulse 2.2s ease-out infinite, pc-assistant-bounce 2.2s ease-in-out infinite !important;
+  }
+  #pc-assistant-fab.pc-assistant-fab:hover,
+  #pc-assistant-fab.pc-assistant-fab.is-open {
+    background: #157347 !important;
+  }
+  #pc-assistant-fab.pc-assistant-fab.is-open,
+  #pc-assistant-fab.pc-assistant-fab.is-settled {
+    animation: none !important;
+  }
+  #pc-assistant-tip.pc-assistant-tip {
+    position: fixed !important;
+    right: 22px !important;
+    bottom: 192px !important;
+    z-index: 2147483000 !important;
+    max-width: min(230px, calc(100vw - 40px)) !important;
+    background: #0f172a !important;
+    color: #fff !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    padding: 10px 12px !important;
+    font-size: 0.86rem !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+    text-align: left !important;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28) !important;
+    cursor: pointer !important;
+    animation: pc-assistant-tip-in 0.35s ease-out !important;
+  }
+  #pc-assistant-tip.pc-assistant-tip::after {
+    content: '';
+    position: absolute;
+    right: 30px;
+    bottom: -7px;
+    width: 14px;
+    height: 14px;
+    background: #0f172a;
+    transform: rotate(45deg);
+    border-radius: 2px;
+  }
+  #pc-assistant-tip.pc-assistant-tip[hidden] {
+    display: none !important;
+  }
+  #pc-assistant-panel.pc-assistant-panel {
+    position: fixed !important;
+    right: 22px !important;
+    bottom: 198px !important;
+    left: auto !important;
+    z-index: 2147483000 !important;
+    width: min(400px, calc(100vw - 24px)) !important;
+    height: min(86vh, 780px) !important;
+    max-height: min(86vh, 780px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: #fff !important;
+    border: 1px solid #e5e7eb !important;
+    border-radius: 16px !important;
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22) !important;
+    overflow: hidden !important;
+  }
+  #pc-assistant-panel.pc-assistant-panel[hidden] {
+    display: none !important;
+  }
+  .pc-assistant-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #0f766e;
+    color: #fff;
+    flex: 0 0 auto;
+  }
+  .pc-assistant-subtitle { font-size: 12px; opacity: 0.9; }
+  .pc-assistant-header-actions { display: flex; align-items: center; gap: 6px; }
+  .pc-assistant-close {
+    border: 0; background: transparent; color: #fff;
+    font-size: 1.5rem; line-height: 1; padding: 0 4px; cursor: pointer;
+  }
+  .pc-assistant-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #f8fafc;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px;
+  }
+  .pc-assistant-bubble {
+    margin-bottom: 8px; padding: 8px 10px; border-radius: 12px;
+    font-size: 0.92rem; white-space: pre-wrap; word-break: break-word;
+  }
+  .pc-assistant-bubble-user { background: #dbeafe; margin-left: 12%; }
+  .pc-assistant-bubble-bot,
+  .pc-assistant-bubble-welcome {
+    background: #fff; border: 1px solid #e5e7eb; margin-right: 8%;
+  }
+  .pc-assistant-carousel {
+    margin: 4px 0 10px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 10px;
+    overflow: hidden;
+    position: relative;
+  }
+  .pc-assistant-carousel img {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .pc-assistant-carousel-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .pc-assistant-carousel-nav button {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #0f172a;
+    border-radius: 8px;
+    width: 34px;
+    height: 34px;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .pc-assistant-carousel-nav button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .pc-assistant-carousel-meta {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #475569;
+    text-align: center;
+    flex: 1 1 auto;
+  }
+  .pc-assistant-dots {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .pc-assistant-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .pc-assistant-dot.is-active { background: #0f766e; }
+  .pc-assistant-build {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+  }
+  .pc-assistant-build-media {
+    display: flex;
+    gap: 6px;
+    height: 56px;
+    margin: 0 0 8px;
+    overflow: hidden;
+  }
+  .pc-assistant-thumb {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 56px;
+    border-radius: 8px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .pc-assistant-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    object-position: center;
+  }
+  .pc-assistant-build-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin: 0 0 2px;
+    color: #0f172a;
+  }
+  .pc-assistant-build-summary {
+    font-size: 0.7rem;
+    color: #64748b;
+    margin: 0 0 6px;
+    line-height: 1.3;
+  }
+  .pc-assistant-parts {
+    margin: 0 0 8px;
+    position: relative;
+    z-index: 1;
+    background: #fff;
+  }
+  .pc-assistant-part {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 8px;
+    row-gap: 0;
+    align-items: baseline;
+    padding: 3px 0;
+    border-bottom: 1px solid #eef2f7;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+  .pc-assistant-part:last-child { border-bottom: 0; }
+  .pc-assistant-part-label {
+    color: #64748b;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .pc-assistant-part-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pc-assistant-part-price {
+    white-space: nowrap;
+    font-weight: 700;
+    color: #0f172a;
+    justify-self: end;
+  }
+  .pc-assistant-build-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pc-assistant-build-price {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .pc-assistant-cart-form { margin: 0; }
+  .pc-assistant-note { font-size: 0.72rem; color: #64748b; margin: 0; }
+  .pc-assistant-priorities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 8px;
+    overflow: visible;
+  }
+  .pc-assistant-priorities .badge {
+    font-size: 0.62rem;
+    padding: 0.12em 0.35em;
+    margin: 0 !important;
+  }
+  .pc-assistant-composer {
+    flex: 0 0 auto;
+    border-top: 1px solid #e5e7eb;
+    background: #fff;
+  }
+  .pc-assistant-form {
+    display: flex; gap: 8px; padding: 10px 12px 4px;
+  }
+  .pc-assistant-form input {
+    flex: 1 1 auto; border: 1px solid #cbd5e1; border-radius: 8px;
+    padding: 8px 10px; font-size: 0.92rem;
+  }
+  .pc-assistant-status {
+    margin: 0; padding: 0 12px 10px; font-size: 0.78rem;
+    color: #64748b; min-height: 1.2em;
+  }
+  @media (max-width: 575.98px) {
+    #pc-assistant-fab.pc-assistant-fab {
+      right: 14px !important;
+      bottom: 104px !important;
+      width: 78px !important;
+      height: 78px !important;
+      font-size: 1.8rem !important;
+    }
+    #pc-assistant-tip.pc-assistant-tip {
+      right: 14px !important;
+      bottom: 194px !important;
+      max-width: min(210px, calc(100vw - 28px)) !important;
+    }
+    #pc-assistant-panel.pc-assistant-panel {
+      right: 8px !important;
+      left: 8px !important;
+      width: auto !important;
+      bottom: 198px !important;
+      height: min(88vh, 820px) !important;
+      max-height: min(88vh, 820px) !important;
+    }
+  }
+</style>
+<div
+  id="pc-assistant-root"
+  data-chat-url="{% url 'assistant_chat' %}"
+  data-add-build-url="{% url 'add_build_cart' %}"
+  data-storage-key="pcbuilder.assistant.v2"
+>
+  {% csrf_token %}
+  <button type="button" id="pc-assistant-tip" class="pc-assistant-tip" aria-label="Abrir asistente">
+    ¿No sabes qué ocupas?<br>¡Pide ayuda!
+  </button>
+  <button type="button" id="pc-assistant-fab" class="pc-assistant-fab" aria-label="Abrir asistente de compras" title="Asistente">
+    <i class="fas fa-comments" aria-hidden="true"></i>
+  </button>
+
+  <div id="pc-assistant-panel" class="pc-assistant-panel" hidden>
+    <div class="pc-assistant-header">
+      <div>
+        <strong>Asistente PCBuilder</strong>
+        <div class="pc-assistant-subtitle">Te armo una PC compatible</div>
+      </div>
+      <div class="pc-assistant-header-actions">
+        <button type="button" id="pc-assistant-clear" class="btn btn-sm btn-outline-light" title="Borrar conversación">Limpiar</button>
+        <button type="button" id="pc-assistant-close" class="pc-assistant-close" aria-label="Cerrar">&times;</button>
+      </div>
+    </div>
+
+    <div id="pc-assistant-scroll" class="pc-assistant-scroll">
+      <div id="pc-assistant-log" class="pc-assistant-log" aria-live="polite"></div>
+    </div>
+
+    <div class="pc-assistant-composer">
+      <form id="pc-assistant-form" class="pc-assistant-form">
+        <input id="pc-assistant-input" type="text" maxlength="500" placeholder="Ej. jugar a 1080, AMD, 18 mil" autocomplete="off" required>
+        <button id="pc-assistant-send" type="submit" class="btn btn-success btn-sm">Enviar</button>
+      </form>
+      <p id="pc-assistant-status" class="pc-assistant-status"></p>
+    </div>
+  </div>
+</div>
+<script src="{% static 'js/assistant-widget.js' %}?v=20" defer></script>

@@ -183,13 +183,48 @@ def _defuzzify(fired: List[Tuple[float, str]]) -> float:
     return _centroid(aggregated)
 
 
-def infer_priorities(budget: float, use_case: str) -> Dict[str, Dict[str, float]]:
+def _apply_pref_boosts(priorities: Dict[str, Dict[str, float]], prefs: dict) -> None:
+    """Ajusta pesos segun resolucion / rendimiento / experiencia."""
+    resolution = prefs.get('resolution') or '1080p'
+    performance = prefs.get('performance') or 'medio'
+    experience = prefs.get('experience') or 'medio'
+
+    def _bump(slot: str, delta: float) -> None:
+        score = max(5.0, min(98.0, priorities[slot]['score'] + delta))
+        priorities[slot]['score'] = round(score, 2)
+        priorities[slot]['label'] = _label_for(score)
+
+    if resolution in ('1440p', '4k') or performance == 'alto':
+        _bump('video-card', 12 if resolution == '4k' or performance == 'alto' else 8)
+        _bump('power-supply', 6)
+        _bump('cpu-cooler', 5)
+        _bump('memory', 4)
+    if resolution == 'office' or performance == 'bajo':
+        _bump('video-card', -10)
+        _bump('internal-hard-drive', 4)
+    if experience == 'principiante':
+        _bump('motherboard', 4)
+        _bump('power-supply', 5)
+        _bump('case', -3)
+    if experience == 'avanzado' and performance == 'alto':
+        _bump('cpu', 5)
+        _bump('cpu-cooler', 6)
+
+
+def infer_priorities(
+    budget: float,
+    use_case: str,
+    prefs: dict | None = None,
+) -> Dict[str, Dict[str, float]]:
     """
     Pesos Mamdani por pieza.
 
-    Cada entrada es {score: 0-100, label: 'Muy alta', term: 'muy_alta'}.
+    Cada entrada es {score: 0-100, label: 'Muy alta'}.
     """
+    from assistant.preferences import normalize_prefs
+
     selected = use_case if use_case in _PRIORITY_TABLE else 'gaming'
+    normalized = normalize_prefs(prefs, use_case=selected)
     memberships = budget_memberships(budget)
     table = _PRIORITY_TABLE[selected]
     priorities = {}
@@ -203,6 +238,7 @@ def infer_priorities(budget: float, use_case: str) -> Dict[str, Dict[str, float]
             'score': round(score, 2),
             'label': _label_for(score),
         }
+    _apply_pref_boosts(priorities, normalized)
     return priorities
 
 

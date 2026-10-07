@@ -564,32 +564,38 @@ pero barata no le gane a una pieza buena para el uso.
 --------------------------------------------------------------------
 
 diagnose() revisa la build completa y devuelve codigos. Lista vacia
-significa que pasa. Los codigos son:
+significa que pasa. Acepta preferencias (resolucion, rendimiento,
+experiencia, marca) para endurecer el filtro. Los codigos son:
 
 - socket: el socket del CPU y el de la placa tienen que existir y ser
   iguales.
+- brand: si el usuario pide AMD o Intel, el CPU tiene que coincidir.
+- legacy: sockets muy viejos (LGA775, LGA1150/55/56, AM3, etc.) se
+  bloquean para principiante, rendimiento medio/alto o 1440p/4K.
 - ram: generacion DDR permitida por el socket (AM5 y LGA1851 solo DDR5,
   AM4 y LGA1151 solo DDR4, LGA1700 acepta DDR4 o DDR5), numero de
   modulos menor o igual a los slots, y GB totales menores o iguales al
   maximo de la placa.
+- ram_channels: con rendimiento medio/alto se exige al menos 2 modulos
+  (dual channel).
 - form_factor: el formato de la placa tiene que caber en el maximo del
   gabinete. Orden de menor a mayor: Mini ITX, Micro ATX, ATX, EATX,
   XL ATX. Uno mas chico cabe en uno mas grande.
+- psu_size: Mini ITX + fuente ATX muy grande en gabinete chico.
 - gpu_size: el largo de la GPU (si el CSV no trae largo, se asume
   250 mm) no puede pasar el claro del gabinete. El claro se estima por
   el tipo: desktop, slim y HTPC unos 205 mm; mini tower unos 280 mm;
   mid tower unos 370 mm; full tower unos 430 mm.
-- cooler: un aire no trae radiador y se estima en unos 200 W. Un AIO
-  trae radiador (120, 240, 280, 360, 420) y tiene que caber en el claro
-  del gabinete. La capacidad estimada del cooler tiene que cubrir el
-  TDP del CPU.
-- power: watts de la fuente >= TDP del CPU + TDP estimado de la GPU
-  + 100 W de margen. El TDP de la GPU no viene en el CSV; se estima por
-  el nombre del chipset (por ejemplo una 3060 ronda 170 W, una 4090
-  ronda 450 W).
+- cooler: aire/AIO debe caber (radiador o altura) y cubrir el TDP del
+  CPU.
+- power: watts de la fuente >= (TDP CPU + TDP GPU estimado + 100 W) con
+  margen segun preferencias (1.10 a 1.25). El TDP de la GPU se estima
+  por chipset.
+- storage: HDD mecanico se rechaza en 1440p/4K, rendimiento alto, o
+  principiante fuera de oficina.
 
-El almacenamiento no tiene restriccion fisica en este catalogo: la
-placa no trae conteo de ranuras M.2.
+El catalogo no trae conteo de ranuras M.2; el filtro de disco se basa
+en tipo SSD/NVMe vs HDD.
 
 --------------------------------------------------------------------
 12.4 ALGORITMO GENETICO
@@ -785,4 +791,53 @@ del paso 2.
 
 --------------------------------------------------------------------
 FIN DE LA SECCION 12
+--------------------------------------------------------------------
+
+--------------------------------------------------------------------
+13. CHAT CON LLM (SOLO INTERPRETE)
+--------------------------------------------------------------------
+
+No hace falta un vector store ni embeddings. El chat no recomienda
+piezas. El LLM solo traduce el mensaje a JSON:
+
+    { use_case, budget, resolution, performance, experience, brand,
+      ready, ask, summary }
+
+Preferencias extra (assistant/preferences.py): resolucion, rendimiento,
+experiencia y marca de CPU. Tienen defaults si el usuario no las dice.
+Si ready es true, la vista llama a
+recommend_builds(budget, use_case, prefs=...) y la PC la arma Mamdani
++ genetico con el filtro de compatibilidad endurecido.
+
+Archivos:
+
+- assistant/interpreter.py
+  Prompt + llamada OpenAI-compatible (requests). Respaldo por reglas
+  si no hay OPENAI_API_KEY.
+- assistant/views.py
+  assistant_chat (POST /assistant/chat/)
+- templates/assistant/assistant.html
+  UI de chat + formulario clasico plegado
+
+Variables en .env (nombres OPENAI_* por compatibilidad; sirve Gemini):
+
+- OPENAI_API_KEY
+- OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+- OPENAI_MODEL=gemini-3.8-flash
+- OPENAI_TIMEOUT_SECONDS
+
+Como saber si el LLM responde: bajo el chat debe decir
+"Interprete: llm" en verde. Si dice "rules" en amarillo, esta usando
+el respaldo local (sin clave, modelo mal, o Gemini caido/503).
+
+Flujo:
+
+1. Usuario escribe en el chat.
+2. interpret_message extrae uso y presupuesto.
+3. Si falta uno, el bot pregunta (ask).
+4. Si estan los dos, corre el motor fuzzy + genetico.
+5. La respuesta muestra builds y prioridades. El LLM no eligio piezas.
+
+--------------------------------------------------------------------
+FIN DE LA SECCION 13
 --------------------------------------------------------------------

@@ -57,4 +57,7 @@ $(document).ready(function() {
 
   {%endblock%}
 
+{% if request.resolver_match.url_name != 'assistant' %}
+{% include 'includes/assistant_widget.html' %}
+{% endif %}
 {% include 'includes/footer.html' %}

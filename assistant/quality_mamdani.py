@@ -318,7 +318,39 @@ def _rules_for(product: Any, use_case: str) -> Sequence[Fired]:
     return [(0.2, 'media')]
 
 
-def component_quality(product: Any, use_case: str) -> float:
-    """Adecuacion 0-100 de una pieza para el uso. Defuzzificacion por centroide."""
-    fired = [( _clip(strength), term) for strength, term in _rules_for(product, use_case)]
-    return round(_defuzzify(fired), 2)
+def component_quality(product: Any, use_case: str, prefs: dict | None = None) -> float:
+    """Adecuacion 0-100 de una pieza para el uso y preferencias."""
+    from assistant.compatibility import cpu_brand, storage_is_ssd
+    from assistant.preferences import normalize_prefs
+
+    selected = use_case if use_case in ('gaming', 'trabajo', 'estudio', 'streaming') else 'gaming'
+    normalized = normalize_prefs(prefs, use_case=selected)
+    fired = [(_clip(strength), term) for strength, term in _rules_for(product, selected)]
+    score = _defuzzify(fired)
+
+    slug = _slug(product)
+    # Marca preferida (CPU / placa).
+    if normalized['brand'] in ('amd', 'intel') and slug in ('cpu', 'motherboard'):
+        brand = cpu_brand(product)
+        if brand and brand == normalized['brand']:
+            score = min(98.0, score + 8)
+        elif brand and brand != normalized['brand']:
+            score = max(8.0, score - 18)
+
+    # Resolucion / rendimiento empujan GPU y SSD.
+    if slug == 'video-card':
+        if normalized['resolution'] in ('1440p', '4k') or normalized['performance'] == 'alto':
+            score = min(98.0, score + 6)
+        if normalized['resolution'] == 'office' or normalized['performance'] == 'bajo':
+            score = max(8.0, score - 8)
+    if slug == 'internal-hard-drive':
+        if storage_is_ssd(product):
+            if normalized['performance'] != 'bajo':
+                score = min(98.0, score + 5)
+        elif normalized['performance'] == 'alto' or normalized['resolution'] in ('1440p', '4k'):
+            score = max(5.0, score - 20)
+
+    if slug == 'memory' and normalized['performance'] == 'alto':
+        score = min(98.0, score + 4)
+
+    return round(score, 2)

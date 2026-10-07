@@ -19,11 +19,13 @@ from typing import Any, Dict, List, Optional, Sequence
 from assistant.compatibility import (
     BUILD_SLOTS,
     DDR_BY_SOCKET,
+    LEGACY_SOCKETS,
     SLOT_LABELS,
     case_clearance,
     case_max_rank,
     compatibility_summary,
     cooler_limits,
+    cpu_brand,
     cpu_tdp,
     diagnose,
     form_factor_rank,
@@ -35,9 +37,11 @@ from assistant.compatibility import (
     ram_profile,
     socket_of,
     specs_of,
+    storage_is_ssd,
     to_float,
 )
 from assistant.mamdani import infer_priorities, priority_rows
+from assistant.preferences import normalize_prefs, prefs_summary
 from assistant.quality_mamdani import component_quality
 
 POPULATION_SIZE = 20
@@ -110,17 +114,40 @@ def _part_slug(product: Any) -> str:
     return getattr(category, 'slug', getattr(product, 'category_slug', '')) or ''
 
 
-def _usable(slot: str, product: Any) -> bool:
+def _usable(slot: str, product: Any, prefs: Optional[Dict[str, str]] = None) -> bool:
     if not getattr(product, 'price', 0):
         return False
+    prefs = prefs or normalize_prefs(None)
     if slot == 'cpu':
-        return bool(socket_of(product))
+        sock = socket_of(product)
+        if not sock:
+            return False
+        if prefs['brand'] in ('amd', 'intel'):
+            brand = cpu_brand(product)
+            if brand and brand != prefs['brand']:
+                return False
+        if prefs['experience'] == 'principiante' and sock in LEGACY_SOCKETS:
+            return False
+        return True
     if slot == 'motherboard':
         specs = specs_of(product)
-        return bool(socket_of(product)) and form_factor_rank(specs.get('form_factor')) is not None
+        sock = socket_of(product)
+        if not sock or form_factor_rank(specs.get('form_factor')) is None:
+            return False
+        if prefs['experience'] == 'principiante' and sock in LEGACY_SOCKETS:
+            return False
+        return True
     if slot == 'memory':
-        generation, _modules, total = ram_profile(product)
-        return generation is not None and total > 0
+        generation, modules, total = ram_profile(product)
+        if generation is None or total <= 0:
+            return False
+        if prefs['performance'] in ('medio', 'alto') and modules < 2:
+            return False
+        return True
+    if slot == 'internal-hard-drive':
+        if prefs['performance'] == 'alto' or prefs['resolution'] in ('1440p', '4k'):
+            return storage_is_ssd(product)
+        return True
     if slot == 'power-supply':
         return psu_watts(product) > 0
     if slot == 'case':
@@ -136,30 +163,44 @@ def _stride_sample(items: Sequence[Any], limit: int) -> List[Any]:
     return [chosen[int(index * step)] for index in range(limit)]
 
 
-def _annotate_quality(product: Any, use_case: str) -> float:
+def _annotate_quality(product: Any, use_case: str, prefs: Optional[Dict[str, str]] = None) -> float:
+    cache_key = (
+        use_case,
+        (prefs or {}).get('resolution'),
+        (prefs or {}).get('performance'),
+        (prefs or {}).get('brand'),
+    )
     cached = getattr(product, '_recommend_quality', None)
-    cached_use = getattr(product, '_recommend_use', None)
-    if cached is not None and cached_use == use_case:
+    cached_key = getattr(product, '_recommend_key', None)
+    if cached is not None and cached_key == cache_key:
         return float(cached)
-    quality = component_quality(product, use_case)
+    quality = component_quality(product, use_case, prefs)
     try:
         setattr(product, '_recommend_quality', quality)
-        setattr(product, '_recommend_use', use_case)
+        setattr(product, '_recommend_key', cache_key)
     except AttributeError:
         pass
     return quality
 
 
-def _diverse_quality_pool(items: Sequence[Any], use_case: str, limit: int = POOL_LIMIT) -> List[Any]:
+def _diverse_quality_pool(
+    items: Sequence[Any],
+    use_case: str,
+    prefs: Optional[Dict[str, str]] = None,
+    limit: int = POOL_LIMIT,
+) -> List[Any]:
     """En cada banda de precio se queda con las piezas de mejor spec para el uso."""
     pool = list(items)
     if len(pool) > 420:
         pool = _stride_sample(pool, 420)
     if len(pool) <= limit:
         for product in pool:
-            _annotate_quality(product, use_case)
+            _annotate_quality(product, use_case, prefs)
         return pool
-    ranked = [(_annotate_quality(product, use_case), int(product.price or 0), product) for product in pool]
+    ranked = [
+        (_annotate_quality(product, use_case, prefs), int(product.price or 0), product)
+        for product in pool
+    ]
     ranked.sort(key=lambda item: item[1])
     bands = 4
     per_band = max(1, limit // bands)
@@ -261,8 +302,10 @@ def random_compatible(
     index: PoolIndex,
     shares: Dict[str, float],
     budget: float,
+    prefs: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
     floors = _slot_floors(index)
+    index.prefs = prefs
     for _attempt in range(28):
         spent = 0
         chosen: List[str] = []
@@ -314,7 +357,7 @@ def random_compatible(
         spent += int(memory.price or 0)
         chosen.append('memory')
 
-        max_gpu, _max_rad = case_clearance(case)
+        max_gpu, _max_rad, _max_air = case_clearance(case)
         gpus = [gpu for gpu in index.pools['video-card'] if gpu_length_mm(gpu) <= max_gpu]
         gpu = _pick_within(
             rng, gpus, shares['video-card'],
@@ -325,7 +368,17 @@ def random_compatible(
         spent += int(gpu.price or 0)
         chosen.append('video-card')
 
-        need = cpu_tdp(cpu) + gpu_tdp(gpu) + 100
+        trial_power = {
+            'cpu': cpu,
+            'video-card': gpu,
+            'memory': memory,
+            'motherboard': motherboard,
+            'internal-hard-drive': index.pools['internal-hard-drive'][0],
+            'power-supply': index.pools['power-supply'][0],
+            'case': case,
+            'cpu-cooler': index.pools['cpu-cooler'][0],
+        }
+        need = power_need(trial_power, getattr(index, 'prefs', None))
         psus = [psu for psu in index.pools['power-supply'] if psu_watts(psu) >= need]
         psu = _pick_within(
             rng, psus, shares['power-supply'],
@@ -362,7 +415,7 @@ def random_compatible(
             'case': case,
             'cpu-cooler': cooler,
         }
-        if is_compatible(build) and _within_budget(build, budget):
+        if is_compatible(build, prefs) and _within_budget(build, budget):
             return build
     return None
 
@@ -380,16 +433,25 @@ def _ram_fits(memory: Any, motherboard: Any) -> bool:
 
 
 def _cooler_fits(cooler: Any, case: Any, cpu: Any) -> bool:
-    _watts, radiator = cooler_limits(cooler)
-    _gpu, max_radiator = case_clearance(case)
-    capacity, _radiator = cooler_limits(cooler)
-    return radiator <= max_radiator and capacity >= cpu_tdp(cpu)
+    capacity, radiator, air_height = cooler_limits(cooler)
+    _gpu, max_radiator, max_air = case_clearance(case)
+    if radiator > max_radiator:
+        return False
+    if air_height > 0 and air_height > max_air:
+        return False
+    return capacity >= cpu_tdp(cpu)
 
 
-def _replacement_ok(build: Dict[str, Any], slot: str, candidate: Any, budget: float) -> bool:
+def _replacement_ok(
+    build: Dict[str, Any],
+    slot: str,
+    candidate: Any,
+    budget: float,
+    prefs: Optional[Dict[str, str]] = None,
+) -> bool:
     trial = copy_build(build)
     trial[slot] = candidate
-    return is_compatible(trial) and _within_budget(trial, budget)
+    return is_compatible(trial, prefs) and _within_budget(trial, budget)
 
 
 def mutate(
@@ -398,6 +460,7 @@ def mutate(
     index: PoolIndex,
     budget: float,
     rate: float = MUTATION_RATE,
+    prefs: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Cambia un gen por otro componente que deje la build compatible."""
     if rng.random() > rate:
@@ -411,7 +474,7 @@ def mutate(
         candidate = pool[rng.randrange(len(pool))]
         if candidate is child[slot]:
             continue
-        if _replacement_ok(child, slot, candidate, budget):
+        if _replacement_ok(child, slot, candidate, budget, prefs):
             child[slot] = candidate
             return child
     return child
@@ -423,13 +486,14 @@ def _repair(
     index: PoolIndex,
     shares: Dict[str, float],
     budget: float,
+    prefs: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
     child = copy_build(build)
     for _pass in range(2):
-        issues = set(diagnose(child))
+        issues = set(diagnose(child, prefs))
         if not issues and _within_budget(child, budget):
             return child
-        if 'socket' in issues or 'form_factor' in issues:
+        if 'socket' in issues or 'form_factor' in issues or 'brand' in issues or 'legacy' in issues:
             boards = index.mb_by_socket.get(socket_of(child['cpu'])) or []
             motherboard = _pick(rng, boards, shares['motherboard'])
             if motherboard is not None:
@@ -439,7 +503,7 @@ def _repair(
             case = _pick(rng, cases, shares['case'])
             if case is not None:
                 child['case'] = case
-        if 'ram' in issues:
+        if 'ram' in issues or 'ram_channels' in issues:
             allowed = DDR_BY_SOCKET.get(socket_of(child['cpu']))
             ram_pool = []
             if allowed:
@@ -448,17 +512,19 @@ def _repair(
             else:
                 ram_pool = list(index.pools['memory'])
             ram_pool = [memory for memory in ram_pool if _ram_fits(memory, child['motherboard'])]
+            if prefs and prefs.get('performance') in ('medio', 'alto'):
+                ram_pool = [memory for memory in ram_pool if ram_profile(memory)[1] >= 2]
             memory = _pick(rng, ram_pool, shares['memory'])
             if memory is not None:
                 child['memory'] = memory
         if 'gpu_size' in issues:
-            max_gpu, _rad = case_clearance(child['case'])
+            max_gpu, _rad, _air = case_clearance(child['case'])
             gpus = [gpu for gpu in index.pools['video-card'] if gpu_length_mm(gpu) <= max_gpu]
             gpu = _pick(rng, gpus, shares['video-card'])
             if gpu is not None:
                 child['video-card'] = gpu
-        if 'power' in issues:
-            need = power_need(child)
+        if 'power' in issues or 'psu_size' in issues:
+            need = power_need(child, prefs)
             psus = [psu for psu in index.pools['power-supply'] if psu_watts(psu) >= need]
             psu = _pick(rng, psus, shares['power-supply'])
             if psu is not None:
@@ -471,17 +537,27 @@ def _repair(
             cooler = _pick(rng, coolers, shares['cpu-cooler'])
             if cooler is not None:
                 child['cpu-cooler'] = cooler
-    if is_compatible(child) and _within_budget(child, budget):
+        if 'storage' in issues:
+            disks = [disk for disk in index.pools['internal-hard-drive'] if storage_is_ssd(disk)]
+            storage = _pick(rng, disks or index.pools['internal-hard-drive'], shares['internal-hard-drive'])
+            if storage is not None:
+                child['internal-hard-drive'] = storage
+    if is_compatible(child, prefs) and _within_budget(child, budget):
         return child
     return None
 
 
-def _quality_cache(pools: Dict[str, Sequence[Any]], shares: Dict[str, float], use_case: str) -> Dict[tuple, float]:
+def _quality_cache(
+    pools: Dict[str, Sequence[Any]],
+    shares: Dict[str, float],
+    use_case: str,
+    prefs: Optional[Dict[str, str]] = None,
+) -> Dict[tuple, float]:
     del shares
     cache = {}
     for slot in BUILD_SLOTS:
         for product in pools[slot]:
-            cache[(id(product), slot)] = _annotate_quality(product, use_case)
+            cache[(id(product), slot)] = _annotate_quality(product, use_case, prefs)
     return cache
 
 
@@ -490,8 +566,9 @@ def fitness(
     budget: float,
     priorities: Dict[str, dict],
     quality: Dict[tuple, float],
+    prefs: Optional[Dict[str, str]] = None,
 ) -> float:
-    if not is_compatible(build):
+    if not is_compatible(build, prefs):
         return 0.0
     shares = _shares(budget, priorities)
     weighted = 0.0
@@ -528,12 +605,16 @@ def _prepare_pools(
     raw: Dict[str, Sequence[Any]],
     budget: float,
     use_case: str,
+    prefs: Optional[Dict[str, str]] = None,
 ) -> Dict[str, List[Any]]:
     prepared = {}
     for slot in BUILD_SLOTS:
-        usable = [product for product in raw.get(slot) or [] if _usable(slot, product)]
+        usable = [
+            product for product in raw.get(slot) or []
+            if _usable(slot, product, prefs)
+        ]
         capped = _apply_price_cap(slot, usable, budget)
-        prepared[slot] = _diverse_quality_pool(capped, use_case)
+        prepared[slot] = _diverse_quality_pool(capped, use_case, prefs)
     return prepared
 
 
@@ -596,7 +677,13 @@ def _empty_result(priorities: Dict[str, dict], message: str, source: str) -> dic
     }
 
 
-def _present(build: Dict[str, Any], rank: int, score: float, priorities: Dict[str, dict]) -> dict:
+def _present(
+    build: Dict[str, Any],
+    rank: int,
+    score: float,
+    priorities: Dict[str, dict],
+    prefs: Optional[Dict[str, str]] = None,
+) -> dict:
     parts = []
     for slot in BUILD_SLOTS:
         product = build[slot]
@@ -611,7 +698,7 @@ def _present(build: Dict[str, Any], rank: int, score: float, priorities: Dict[st
         'rank': rank,
         'fitness': round(score, 2),
         'total_price': total_price(build),
-        'summary': compatibility_summary(build),
+        'summary': compatibility_summary(build, prefs),
         'parts': parts,
     }
 
@@ -621,20 +708,24 @@ def recommend_builds(
     use_case: str,
     pools: Optional[Dict[str, Sequence[Any]]] = None,
     *,
+    prefs: Optional[Dict[str, str]] = None,
     selection: str = 'ruleta',
     population_size: int = POPULATION_SIZE,
     generations: int = GENERATIONS,
     seed: Optional[int] = None,
 ) -> dict:
     budget = float(budget or 0) or 15000.0
-    priorities = infer_priorities(budget, use_case)
+    prefs = normalize_prefs(prefs, use_case=use_case)
+    priorities = infer_priorities(budget, use_case, prefs)
     if seed is None:
-        seed = zlib.adler32(f'{use_case}:{int(budget)}:{selection}'.encode('utf-8'))
+        seed = zlib.adler32(
+            f'{use_case}:{int(budget)}:{selection}:{prefs_summary(prefs)}'.encode('utf-8')
+        )
     rng = random.Random(seed)
     source = 'provided'
     if pools is None:
         pools, source = load_catalog()
-    prepared = _prepare_pools(pools, budget, use_case)
+    prepared = _prepare_pools(pools, budget, use_case, prefs)
     index = PoolIndex(prepared)
     if not index.ready():
         return _empty_result(
@@ -648,25 +739,25 @@ def recommend_builds(
     attempts = 0
     while len(population) < population_size and attempts < population_size * 6:
         attempts += 1
-        individual = random_compatible(rng, index, shares, budget)
+        individual = random_compatible(rng, index, shares, budget, prefs)
         if individual is not None:
             population.append(individual)
     if not population:
         return _empty_result(
             priorities,
-            'No encontramos una configuración compatible (socket, energía y tamaño) para ese presupuesto.',
+            'No encontramos una configuración compatible (socket, energía, tamaño y preferencias) para ese presupuesto.',
             source,
         )
     while len(population) < population_size:
         population.append(copy_build(rng.choice(population)))
 
-    quality = _quality_cache(prepared, shares, use_case)
+    quality = _quality_cache(prepared, shares, use_case, prefs)
     select = tournament_select if selection == 'torneo' else roulette_select
     history = []
 
     for _generation in range(generations):
         scored = [
-            (fitness(individual, budget, priorities, quality), individual)
+            (fitness(individual, budget, priorities, quality, prefs), individual)
             for individual in population
         ]
         scored.sort(key=lambda item: item[0], reverse=True)
@@ -676,23 +767,23 @@ def recommend_builds(
             parent_a = select(rng, scored)
             parent_b = select(rng, scored)
             child = crossover(rng, parent_a, parent_b)
-            if not is_compatible(child) or not _within_budget(child, budget):
-                child = _repair(rng, child, index, shares, budget) or parent_a
-            child = mutate(rng, child, index, budget)
-            if not is_compatible(child):
+            if not is_compatible(child, prefs) or not _within_budget(child, budget):
+                child = _repair(rng, child, index, shares, budget, prefs) or parent_a
+            child = mutate(rng, child, index, budget, prefs=prefs)
+            if not is_compatible(child, prefs):
                 child = parent_a
             next_population.append(child)
         population = next_population
 
     scored = [
-        (fitness(individual, budget, priorities, quality), individual)
+        (fitness(individual, budget, priorities, quality, prefs), individual)
         for individual in population
     ]
     scored.sort(key=lambda item: item[0], reverse=True)
     unique = []
     seen = set()
     for score, individual in scored:
-        if score <= 0 or not is_compatible(individual):
+        if score <= 0 or not is_compatible(individual, prefs):
             continue
         key = _signature(individual)
         if key in seen:
@@ -703,7 +794,7 @@ def recommend_builds(
     under_budget = [item for item in unique if total_price(item[1]) <= budget]
     chosen = (under_budget or unique)[:3]
     builds = [
-        _present(individual, rank, score, priorities)
+        _present(individual, rank, score, priorities, prefs)
         for rank, (score, individual) in enumerate(chosen, start=1)
     ]
     debug_builds = [
@@ -727,6 +818,7 @@ def recommend_builds(
     return {
         'builds': builds,
         'priorities': priority_rows(priorities),
+        'prefs': prefs,
         'notice': '' if builds else 'No encontramos una configuración compatible para ese presupuesto.',
         'debug': {
             'engine': 'mamdani+genetic',
@@ -734,7 +826,11 @@ def recommend_builds(
             'seleccion': 'torneo' if selection == 'torneo' else 'ruleta',
             'cruce': 'uniforme por componente',
             'mutacion': 'reemplazo por componente compatible',
-            'filtro': 'socket, TDP/fuente/cooler y tamaño (placa, GPU, radiador) antes de la aptitud',
+            'filtro': (
+                'socket, DDR, dual-channel, formato, largo GPU, cooler (radiador/altura), '
+                'fuente con margen, SSD segun rendimiento, plataformas legacy y marca'
+            ),
+            'preferencias': prefs,
             'origen_pool': source,
             'poblacion': population_size,
             'generaciones': generations,
@@ -742,12 +838,12 @@ def recommend_builds(
             'prioridades': priority_rows(priorities),
             'builds': debug_builds,
             'procedimiento': [
-                '1. Difuminar presupuesto y caso de uso.',
-                '2. Inferencia Mamdani: reglas if-then y centroide -> prioridad de cada pieza.',
-                '3. Armar cromosomas (CPU, GPU, RAM, motherboard, almacenamiento, fuente, gabinete, cooler).',
-                '4. Filtrar incompatibles (socket, energia, tamaño) antes de evaluar.',
-                '5. Seleccion por ruleta, cruce de componentes y mutacion compatible.',
-                '6. Devolver hasta 3 configuraciones distintas, priorizando las que caben en el presupuesto.',
+                '1. Leer uso, presupuesto y preferencias (resolucion, rendimiento, experiencia, marca).',
+                '2. Inferencia Mamdani de prioridades (+ ajustes por preferencias).',
+                '3. Armar cromosomas de 8 piezas.',
+                '4. Filtro fuerte de compatibilidad antes de la aptitud.',
+                '5. Ruleta, cruce y mutacion solo con builds compatibles.',
+                '6. Devolver hasta 3 configuraciones distintas dentro de presupuesto.',
             ],
         },
     }
