@@ -16,3 +16,8 @@ data.json
 /static/
 .idea/
 .vscode/
+Limpieza de datos/
+docs/
+*.zip
+ecommerceFinal-beanstalk.zip
+EcommerceFinal-beanstalk.zip
