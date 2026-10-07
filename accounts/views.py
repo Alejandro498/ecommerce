@@ -1,4 +1,4 @@
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import render, redirect
 from .forms import RegistrationForm, UserProfileForm, UserForm
 from .models import Account, UserProfile
 from orders.models import Order
@@ -17,6 +17,16 @@ from smtplib import SMTPAuthenticationError
 from carts.views import _cart_id
 from carts.models import Cart, CartItem
 import requests
+
+
+def _ensure_user_profile(user):
+    """createsuperuser / old accounts may lack a UserProfile row."""
+    profile, _created = UserProfile.objects.get_or_create(
+        user=user,
+        defaults={'profile_picture': 'default/default-user.png'},
+    )
+    return profile
+
 
 # Create your views here.
 def register(request):
@@ -89,70 +99,67 @@ def register(request):
 
 def login(request):
     if request.method == 'POST':
-        email = request.POST['email']
-        password = request.POST['password']
+        email = (request.POST.get('email') or '').strip()
+        password = request.POST.get('password') or ''
+
+        if not email or not password:
+            messages.error(request, 'Ingresa email y contraseña.')
+            return redirect('login')
 
         user = auth.authenticate(email=email, password=password)
 
-        if user is not None:
-
-            try:
-                cart = Cart.objects.get(cart_id=_cart_id(request))
-                is_cart_item_exists = CartItem.objects.filter(cart=cart).exists()
-                if is_cart_item_exists:
-                    cart_item = CartItem.objects.filter(cart=cart)
-
-                    product_variation = []
-                    for item in cart_item:
-                        variation = item.variations.all()
-                        product_variation.append(list(variation))
-
-                    cart_item = CartItem.objects.filter(user=user)
-                    ex_var_list = []
-                    id = []
-                    for item in cart_item:
-                        existing_variation= item.variations.all()
-                        ex_var_list.append(list(existing_variation))
-                        id.append(item.id)
-
-                    #  product_variation = [1, 2, 3, 4, 5]
-                    #  ex_var_list = [5, 6, 7, 8]
-
-                    for pr in product_variation:
-                            if pr in ex_var_list:
-                                index = ex_var_list.index(pr)
-                                item_id = id[index]
-                                item = CartItem.objects.get(id=item_id)
-                                item.quantity +=1
-                                item.user = user
-                                item.save()
-                            else:
-                                cart_item = CartItem.objects.filter(cart=cart)
-                                for item in cart_item:
-                                    item.user = user
-                                    item.save()
-            except:
-                pass
-
-
-            # http://127.0.0.1:8000/accounts/login/?next=/cart/checkout/
-            auth.login(request, user)
-            messages.success(request, 'Has iniciado sesion exitosamente')
-
-            url  = request.META.get('HTTP_REFERER')
-            try:
-                query = requests.utils.urlparse(url).query
-                # next=/cart/checkout/
-                params = dict(x.split('=') for x in query.split('&'))
-                if 'next' in params:
-                    nextPage = params['next']
-                    return redirect(nextPage)
-            except:
-                return redirect('dashboard')
-        else:
-            messages.error(request, 'Las credenciales son incorrectas')
+        if user is None:
+            messages.error(request, 'Las credenciales son incorrectas o la cuenta no existe.')
             return redirect('login')
 
+        try:
+            cart = Cart.objects.get(cart_id=_cart_id(request))
+            is_cart_item_exists = CartItem.objects.filter(cart=cart).exists()
+            if is_cart_item_exists:
+                cart_item = CartItem.objects.filter(cart=cart)
+
+                product_variation = []
+                for item in cart_item:
+                    variation = item.variations.all()
+                    product_variation.append(list(variation))
+
+                cart_item = CartItem.objects.filter(user=user)
+                ex_var_list = []
+                id = []
+                for item in cart_item:
+                    existing_variation = item.variations.all()
+                    ex_var_list.append(list(existing_variation))
+                    id.append(item.id)
+
+                for pr in product_variation:
+                    if pr in ex_var_list:
+                        index = ex_var_list.index(pr)
+                        item_id = id[index]
+                        item = CartItem.objects.get(id=item_id)
+                        item.quantity += 1
+                        item.user = user
+                        item.save()
+                    else:
+                        cart_item = CartItem.objects.filter(cart=cart)
+                        for item in cart_item:
+                            item.user = user
+                            item.save()
+        except Exception:
+            pass
+
+        _ensure_user_profile(user)
+        auth.login(request, user)
+        messages.success(request, 'Has iniciado sesion exitosamente')
+
+        url = request.META.get('HTTP_REFERER')
+        try:
+            query = requests.utils.urlparse(url).query
+            params = dict(x.split('=') for x in query.split('&') if '=' in x)
+            if 'next' in params:
+                return redirect(params['next'])
+        except Exception:
+            pass
+        return redirect('dashboard')
 
     return render(request, 'accounts/login.html')
 
@@ -185,8 +192,7 @@ def activate(request, uidb64, token):
 def dashboard(request):
     orders = Order.objects.order_by('-created_at').filter(user_id=request.user.id, is_ordered=True)
     orders_count = orders.count()
-
-    userprofile = UserProfile.objects.get(user_id=request.user.id)
+    userprofile = _ensure_user_profile(request.user)
 
     context = {
         'orders_count': orders_count,
@@ -266,7 +272,7 @@ def my_orders(request):
 
 @login_required(login_url='login')
 def edit_profile(request):
-    userprofile = get_object_or_404(UserProfile, user=request.user)
+    userprofile = _ensure_user_profile(request.user)
     if request.method == 'POST':
         user_form = UserForm(request.POST, instance=request.user)
         profile_form = UserProfileForm(request.POST, request.FILES, instance=userprofile)

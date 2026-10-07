@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.conf import settings
+from django.contrib import messages
 from django.db import transaction
 from carts.models import CartItem
 from .forms import OrderForm
@@ -101,49 +102,52 @@ def place_order(request, total=0, quantity=0):
     tax = (2 * total)/100
     grand_total = total + tax
 
-    if request.method == 'POST':
-        form = OrderForm(request.POST)
-
-        if form.is_valid():
-            data = Order()
-            data.user = current_user
-            data.first_name = form.cleaned_data['first_name']
-            data.last_name = form.cleaned_data['last_name']
-            data.phone = form.cleaned_data['phone']
-            data.email = form.cleaned_data['email']
-            data.addres_line_1 = form.cleaned_data['addres_line_1']
-            data.addres_line_2 = form.cleaned_data['addres_line_2']
-            data.country = form.cleaned_data['country']
-            data.state = form.cleaned_data['state']
-            data.city = form.cleaned_data['city']
-            data.order_note = form.cleaned_data['order_note']
-            data.order_total = grand_total
-            data.tax = tax
-            data.ip = request.META.get('REMOTE_ADDR')
-            data.save()
-
-            yr=int(datetime.date.today().strftime('%Y'))
-            mt=int(datetime.date.today().strftime('%m'))
-            dt=int(datetime.date.today().strftime('%d'))
-            d = datetime.date(yr,mt,dt)
-            current_date = d.strftime("%Y%m%d")
-            # 20280110
-            order_number = current_date + str(data.id)
-            data.order_number = order_number
-            data.save()
-
-            order = Order.objects.get(user=current_user, is_ordered=False, order_number=order_number)
-            context = {
-                'order': order,
-                'cart_items': cart_items,
-                'total' : total,
-                'tax': tax,
-                'grand_total': grand_total,
-            }
-
-            return render(request, 'orders/payments.html', context)
-    else:
+    if request.method != 'POST':
         return redirect('checkout')
+
+    form = OrderForm(request.POST)
+    if not form.is_valid():
+        messages.error(
+            request,
+            'Completa todos los datos de facturación antes de continuar con la compra.',
+        )
+        return redirect('checkout')
+
+    data = Order()
+    data.user = current_user
+    data.first_name = form.cleaned_data['first_name']
+    data.last_name = form.cleaned_data['last_name']
+    data.phone = form.cleaned_data['phone']
+    data.email = form.cleaned_data['email']
+    data.addres_line_1 = form.cleaned_data['addres_line_1']
+    data.addres_line_2 = form.cleaned_data['addres_line_2'] or ''
+    data.country = form.cleaned_data['country']
+    data.state = form.cleaned_data['state']
+    data.city = form.cleaned_data['city']
+    data.order_note = form.cleaned_data['order_note']
+    data.order_total = grand_total
+    data.tax = tax
+    data.ip = request.META.get('REMOTE_ADDR')
+    data.save()
+
+    yr = int(datetime.date.today().strftime('%Y'))
+    mt = int(datetime.date.today().strftime('%m'))
+    dt = int(datetime.date.today().strftime('%d'))
+    d = datetime.date(yr, mt, dt)
+    current_date = d.strftime("%Y%m%d")
+    order_number = current_date + str(data.id)
+    data.order_number = order_number
+    data.save()
+
+    order = Order.objects.get(user=current_user, is_ordered=False, order_number=order_number)
+    context = {
+        'order': order,
+        'cart_items': cart_items,
+        'total': total,
+        'tax': tax,
+        'grand_total': grand_total,
+    }
+    return render(request, 'orders/payments.html', context)
 
 
 
