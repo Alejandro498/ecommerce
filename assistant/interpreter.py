@@ -28,12 +28,14 @@ Salida SOLO JSON:
 "performance":"bajo|medio|alto"|null,
 "experience":"principiante|medio|avanzado"|null,
 "brand":"amd|intel|any"|null,
+"gpu_brand":"nvidia|amd|any"|null,
 "ready":bool,"ask":str|null,"summary":str}
 Mapa uso: jugar/GTA/fps->gaming; escuela->estudio; editar/render->trabajo; stream->streaming.
 Resolucion: 1080/fullhd->1080p; 1440/2k->1440p; 4k/uhd->4k; oficina->office.
 Rendimiento: suave/basico->bajo; normal->medio; alto/ultra/144fps->alto.
 Experiencia: novato->principiante; experto->avanzado.
-Marca CPU: amd/ryzen->amd; intel->intel; si no dice->any.
+Marca CPU (opcional): amd/ryzen->amd; intel->intel; si no dice->any.
+Marca GPU (opcional): nvidia/geforce/rtx/gtx->nvidia; radeon/rx->amd; si no dice->any.
 Presupuesto MXN ("18 mil"=18000)."""
 
 
@@ -150,14 +152,59 @@ def _extract_experience(text: str) -> Optional[str]:
 
 
 def _extract_brand(text: str) -> Optional[str]:
+    """Marca de CPU. Ignora senales tipicas solo de GPU (nvidia/radeon)."""
     lowered = (text or '').lower()
-    wants_amd = any(token in lowered for token in ('amd', 'ryzen'))
-    wants_intel = 'intel' in lowered
+    gpu_only = any(token in lowered for token in ('nvidia', 'geforce', 'radeon', 'rtx', 'gtx')) and not any(
+        token in lowered for token in ('ryzen', 'intel', 'procesador', 'cpu')
+    )
+    if gpu_only:
+        return None
+
+    wants_amd = (
+        'ryzen' in lowered
+        or 'procesador amd' in lowered
+        or 'cpu amd' in lowered
+        or (
+            'amd' in lowered
+            and not any(token in lowered for token in (
+                'gpu', 'grafica', 'gráfica', 'video', 'tarjeta', 'radeon',
+            ))
+        )
+    )
+    wants_intel = 'intel' in lowered and 'arc' not in lowered
     if wants_amd and not wants_intel:
         return 'amd'
     if wants_intel and not wants_amd:
         return 'intel'
-    if any(token in lowered for token in ('me da igual', 'cualquiera', 'indiferente')):
+    if any(token in lowered for token in (
+        'me da igual el procesador', 'cualquier cpu', 'cpu me da igual',
+    )):
+        return 'any'
+    if any(token in lowered for token in ('me da igual', 'cualquiera', 'indiferente')) and not any(
+        token in lowered for token in ('gpu', 'nvidia', 'radeon', 'grafica', 'gráfica')
+    ):
+        return 'any'
+    return None
+
+
+def _extract_gpu_brand(text: str) -> Optional[str]:
+    lowered = (text or '').lower()
+    wants_nvidia = any(token in lowered for token in (
+        'nvidia', 'geforce', 'rtx', 'gtx', 'quadro',
+    ))
+    wants_amd_gpu = any(token in lowered for token in ('radeon',)) or (
+        re.search(r'\brx\s*\d', lowered) is not None
+    ) or any(token in lowered for token in (
+        'gpu amd', 'grafica amd', 'gráfica amd', 'video amd', 'tarjeta amd',
+    ))
+    if wants_nvidia and not wants_amd_gpu:
+        return 'nvidia'
+    if wants_amd_gpu and not wants_nvidia:
+        return 'amd'
+    if any(token in lowered for token in (
+        'me da igual la gpu', 'cualquier gpu', 'gpu me da igual',
+        'me da igual la grafica', 'me da igual la gráfica',
+    )):
         return 'any'
     return None
 
@@ -172,6 +219,7 @@ def _merge_prefs(
         'performance': (base or {}).get('performance'),
         'experience': (base or {}).get('experience'),
         'brand': (base or {}).get('brand'),
+        'gpu_brand': (base or {}).get('gpu_brand'),
     }
     for item in history or []:
         if item.get('role') != 'user':
@@ -181,10 +229,12 @@ def _merge_prefs(
         prefs['performance'] = _extract_performance(content) or prefs['performance']
         prefs['experience'] = _extract_experience(content) or prefs['experience']
         prefs['brand'] = _extract_brand(content) or prefs['brand']
+        prefs['gpu_brand'] = _extract_gpu_brand(content) or prefs['gpu_brand']
     prefs['resolution'] = _extract_resolution(message) or prefs['resolution']
     prefs['performance'] = _extract_performance(message) or prefs['performance']
     prefs['experience'] = _extract_experience(message) or prefs['experience']
     prefs['brand'] = _extract_brand(message) or prefs['brand']
+    prefs['gpu_brand'] = _extract_gpu_brand(message) or prefs['gpu_brand']
     return prefs
 
 
@@ -201,6 +251,7 @@ def _finalize(payload: Dict[str, Any], source: str, history: Optional[List[Dict[
         'performance': payload.get('performance'),
         'experience': payload.get('experience'),
         'brand': payload.get('brand'),
+        'gpu_brand': payload.get('gpu_brand'),
     }
     # Si vienen del merge de reglas, ya estan; si no, se normalizan con defaults.
     prefs = normalize_prefs(raw_prefs, use_case=use_case or 'gaming')
@@ -234,6 +285,7 @@ def _finalize(payload: Dict[str, Any], source: str, history: Optional[List[Dict[
         'performance': prefs['performance'],
         'experience': prefs['experience'],
         'brand': prefs['brand'],
+        'gpu_brand': prefs['gpu_brand'],
     }
 
 

@@ -571,6 +571,10 @@ class MamdaniAndBuildTests(TestCase):
         self.assertIn('brand', diagnose(brand_mismatch, {'brand': 'intel'}))
         self.assertEqual(diagnose(brand_mismatch, {'brand': 'amd'}), [])
 
+        gpu_mismatch = dict(good)
+        self.assertIn('gpu_brand', diagnose(gpu_mismatch, {'gpu_brand': 'amd'}))
+        self.assertEqual(diagnose(gpu_mismatch, {'gpu_brand': 'nvidia'}), [])
+
         legacy = dict(good)
         legacy['cpu'] = _pools['cpu'][1]
         legacy['motherboard'] = _part(
@@ -668,6 +672,23 @@ class InterpreterTests(TestCase):
         self.assertEqual(parsed['prefs']['performance'], 'alto')
         self.assertEqual(parsed['prefs']['experience'], 'principiante')
         self.assertEqual(parsed['prefs']['brand'], 'amd')
+        self.assertEqual(parsed['prefs']['gpu_brand'], 'any')
+
+    def test_rules_extract_gpu_brand(self):
+        parsed = interpret_with_rules(
+            'Quiero jugar a 1080, prefiero GPU NVIDIA y CPU Ryzen, presupuesto 20000'
+        )
+        self.assertEqual(parsed['use_case'], 'gaming')
+        self.assertEqual(parsed['budget'], 20000)
+        self.assertEqual(parsed['prefs']['brand'], 'amd')
+        self.assertEqual(parsed['prefs']['gpu_brand'], 'nvidia')
+
+        radeon = interpret_with_rules('PC gaming 15000 con Radeon')
+        self.assertEqual(radeon['prefs']['gpu_brand'], 'amd')
+        # Solo GPU: no forzar marca de CPU
+        nvidia_only = interpret_with_rules('Quiero una PC gamer 18000 con nvidia')
+        self.assertEqual(nvidia_only['prefs']['gpu_brand'], 'nvidia')
+        self.assertEqual(nvidia_only['prefs']['brand'], 'any')
 
     @override_settings(OPENAI_API_KEY='test-key', INTERPRETER_FAST_PATH=True)
     def test_fast_path_skips_llm_when_rules_are_enough(self):

@@ -414,6 +414,7 @@ def assistant(request):
         'performance': 'medio',
         'experience': 'medio',
         'brand': 'any',
+        'gpu_brand': 'any',
     }
     submitted = bool(request.GET)
     form = AssistantForm(request.GET or None, initial=defaults)
@@ -430,6 +431,7 @@ def assistant(request):
                 'performance': form.cleaned_data.get('performance'),
                 'experience': form.cleaned_data.get('experience'),
                 'brand': form.cleaned_data.get('brand'),
+                'gpu_brand': form.cleaned_data.get('gpu_brand'),
             },
             use_case=selected_use_case,
         )

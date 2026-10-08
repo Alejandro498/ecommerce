@@ -29,6 +29,7 @@ from assistant.compatibility import (
     cpu_tdp,
     diagnose,
     form_factor_rank,
+    gpu_brand,
     gpu_length_mm,
     gpu_tdp,
     is_compatible,
@@ -129,6 +130,13 @@ def _usable(slot: str, product: Any, prefs: Optional[Dict[str, str]] = None) -> 
         if prefs['experience'] == 'principiante' and sock in LEGACY_SOCKETS:
             return False
         return True
+    if slot == 'video-card':
+        preferred_gpu = prefs.get('gpu_brand', 'any')
+        if preferred_gpu in ('nvidia', 'amd'):
+            detected = gpu_brand(product)
+            if detected and detected != preferred_gpu:
+                return False
+        return True
     if slot == 'motherboard':
         specs = specs_of(product)
         sock = socket_of(product)
@@ -169,6 +177,7 @@ def _annotate_quality(product: Any, use_case: str, prefs: Optional[Dict[str, str
         (prefs or {}).get('resolution'),
         (prefs or {}).get('performance'),
         (prefs or {}).get('brand'),
+        (prefs or {}).get('gpu_brand'),
     )
     cached = getattr(product, '_recommend_quality', None)
     cached_key = getattr(product, '_recommend_key', None)
@@ -493,7 +502,13 @@ def _repair(
         issues = set(diagnose(child, prefs))
         if not issues and _within_budget(child, budget):
             return child
-        if 'socket' in issues or 'form_factor' in issues or 'brand' in issues or 'legacy' in issues:
+        if (
+            'socket' in issues
+            or 'form_factor' in issues
+            or 'brand' in issues
+            or 'gpu_brand' in issues
+            or 'legacy' in issues
+        ):
             boards = index.mb_by_socket.get(socket_of(child['cpu'])) or []
             motherboard = _pick(rng, boards, shares['motherboard'])
             if motherboard is not None:

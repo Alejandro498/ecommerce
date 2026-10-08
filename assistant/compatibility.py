@@ -148,6 +148,24 @@ def cpu_brand(product: Any) -> str:
     return ''
 
 
+def gpu_brand(product: Any) -> str:
+    """Marca de GPU: nvidia | amd | '' si no se puede inferir."""
+    specs = specs_of(product)
+    brand = str(specs.get('gpu_brand') or specs.get('brand') or '').strip().lower()
+    chipset = str(specs.get('chipset') or '').lower()
+    name = str(getattr(product, 'product_name', '') or '').lower()
+    haystack = f'{brand} {chipset} {name}'
+    if brand in ('nvidia', 'amd'):
+        return brand
+    if any(token in haystack for token in ('nvidia', 'geforce', 'rtx', 'gtx', 'quadro')):
+        return 'nvidia'
+    if any(token in haystack for token in ('radeon', 'rx ', 'rx-', 'vega')):
+        return 'amd'
+    if 'amd' in haystack and any(token in haystack for token in ('gpu', 'graphics', 'video')):
+        return 'amd'
+    return ''
+
+
 def form_factor_rank(value: Any) -> Optional[int]:
     text = re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).strip()
     if not text:
@@ -354,6 +372,12 @@ def diagnose(build: Dict[str, Any], prefs: Optional[Dict[str, str]] = None) -> L
         brand = cpu_brand(cpu)
         if brand and brand != prefs['brand']:
             issues.append('brand')
+
+    if prefs.get('gpu_brand') in ('nvidia', 'amd'):
+        preferred_gpu = prefs['gpu_brand']
+        detected_gpu = gpu_brand(gpu)
+        if detected_gpu and detected_gpu != preferred_gpu:
+            issues.append('gpu_brand')
 
     if _needs_modern_platform(prefs) and cpu_socket in LEGACY_SOCKETS:
         issues.append('legacy')

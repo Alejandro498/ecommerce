@@ -33,6 +33,12 @@ BRAND_CHOICES = [
     ('intel', 'Intel'),
 ]
 
+GPU_BRAND_CHOICES = [
+    ('any', 'Me da igual'),
+    ('nvidia', 'NVIDIA'),
+    ('amd', 'AMD (Radeon)'),
+]
+
 
 class AssistantForm(forms.Form):
     use_case = forms.ChoiceField(
@@ -72,6 +78,13 @@ class AssistantForm(forms.Form):
     brand = forms.ChoiceField(
         label='Marca de CPU',
         choices=BRAND_CHOICES,
+        initial='any',
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-control'}),
+    )
+    gpu_brand = forms.ChoiceField(
+        label='Marca de GPU (opcional)',
+        choices=GPU_BRAND_CHOICES,
         initial='any',
         required=False,
         widget=forms.Select(attrs={'class': 'form-control'}),

@@ -2,8 +2,8 @@
 Preferencias del usuario para armar la PC.
 
 Ademas de uso y presupuesto, el chat/formulario pueden aportar resolucion,
-rendimiento esperado, experiencia y marca preferida. Todo tiene default
-seguro para no frenar el flujo.
+rendimiento esperado, experiencia, marca de CPU y marca de GPU.
+Todo tiene default seguro para no frenar el flujo.
 """
 
 from __future__ import annotations
@@ -14,12 +14,14 @@ RESOLUTIONS = ('office', '1080p', '1440p', '4k')
 PERFORMANCE = ('bajo', 'medio', 'alto')
 EXPERIENCE = ('principiante', 'medio', 'avanzado')
 BRANDS = ('any', 'amd', 'intel')
+GPU_BRANDS = ('any', 'nvidia', 'amd')
 
 DEFAULTS = {
     'resolution': None,      # se infiere del uso si falta
     'performance': 'medio',
     'experience': 'medio',
     'brand': 'any',
+    'gpu_brand': 'any',
 }
 
 
@@ -104,6 +106,7 @@ def normalize_prefs(
         'performance': _norm_choice(data.get('performance'), PERFORMANCE, 'medio'),
         'experience': _norm_choice(data.get('experience'), EXPERIENCE, 'medio'),
         'brand': _norm_choice(data.get('brand'), BRANDS, 'any'),
+        'gpu_brand': _norm_choice(data.get('gpu_brand'), GPU_BRANDS, 'any'),
     }
 
 
@@ -118,4 +121,9 @@ def prefs_summary(prefs: Dict[str, str]) -> str:
     exp = prefs.get('experience', 'medio')
     brand = prefs.get('brand', 'any')
     brand_txt = 'AMD o Intel' if brand == 'any' else brand.upper()
-    return f'{res}, rendimiento {perf}, nivel {exp}, marca {brand_txt}'
+    gpu = prefs.get('gpu_brand', 'any')
+    gpu_txt = 'NVIDIA o AMD' if gpu == 'any' else gpu.upper()
+    return (
+        f'{res}, rendimiento {perf}, nivel {exp}, '
+        f'CPU {brand_txt}, GPU {gpu_txt}'
+    )

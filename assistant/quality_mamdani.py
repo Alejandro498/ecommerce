@@ -320,7 +320,7 @@ def _rules_for(product: Any, use_case: str) -> Sequence[Fired]:
 
 def component_quality(product: Any, use_case: str, prefs: dict | None = None) -> float:
     """Adecuacion 0-100 de una pieza para el uso y preferencias."""
-    from assistant.compatibility import cpu_brand, storage_is_ssd
+    from assistant.compatibility import cpu_brand, gpu_brand, storage_is_ssd
     from assistant.preferences import normalize_prefs
 
     selected = use_case if use_case in ('gaming', 'trabajo', 'estudio', 'streaming') else 'gaming'
@@ -339,6 +339,13 @@ def component_quality(product: Any, use_case: str, prefs: dict | None = None) ->
 
     # Resolucion / rendimiento empujan GPU y SSD.
     if slug == 'video-card':
+        preferred_gpu = normalized.get('gpu_brand', 'any')
+        if preferred_gpu in ('nvidia', 'amd'):
+            detected = gpu_brand(product)
+            if detected and detected == preferred_gpu:
+                score = min(98.0, score + 10)
+            elif detected and detected != preferred_gpu:
+                score = max(8.0, score - 22)
         if normalized['resolution'] in ('1440p', '4k') or normalized['performance'] == 'alto':
             score = min(98.0, score + 6)
         if normalized['resolution'] == 'office' or normalized['performance'] == 'bajo':
