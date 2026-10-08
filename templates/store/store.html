@@ -111,8 +111,10 @@
                     <span class="price">{% if product.price %}$ {{ product.price }}{% else %}Consultar precio{% endif %}</span>
                   </div> <!-- price-wrap.// -->
                 </div>
-                {% if product.id %}
+                {% if product.id and product.has_price %}
                 <a href="{% url 'add_cart' product.id %}" class="btn btn-block btn-success">Agregar al Carrito </a>
+                {% elif product.id %}
+                <span class="btn btn-block btn-secondary disabled">Sin precio — no disponible</span>
                 {% else %}
                 <span class="btn btn-block btn-secondary disabled" title="Disponible solo desde CSV (sin id de DB)">Solo lectura (CSV)</span>
                 {% endif %}

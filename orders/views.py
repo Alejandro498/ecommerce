@@ -86,11 +86,20 @@ def payments(request):
 
 def place_order(request, total=0, quantity=0):
     current_user = request.user
-    cart_items = CartItem.objects.filter(user=current_user)
+    cart_items = CartItem.objects.filter(user=current_user).select_related('product')
     cart_count = cart_items.count()
 
     if cart_count <= 0:
         return redirect('store')
+
+    unpriced = [item for item in cart_items if not item.product.has_price]
+    if unpriced:
+        CartItem.objects.filter(id__in=[item.id for item in unpriced]).delete()
+        messages.error(
+            request,
+            'Hay productos sin precio en el carrito. Se quitaron y no se puede continuar la compra.',
+        )
+        return redirect('cart')
 
     grand_total = 0
     tax = 0
@@ -99,7 +108,7 @@ def place_order(request, total=0, quantity=0):
         total += (cart_item.product.price * cart_item.quantity)
         quantity += cart_item.quantity
 
-    tax = (2 * total)/100
+    tax = (2 * total) / 100
     grand_total = total + tax
 
     if request.method != 'POST':

@@ -61,6 +61,13 @@ class CatalogItem:
             return '#'
         return reverse('product_detail', args=[self.category_slug, self.slug])
 
+    @property
+    def has_price(self):
+        try:
+            return int(self.price or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
     def get_image_url(self):
         return static('images/pc-part-placeholder.png')
 

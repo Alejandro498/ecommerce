@@ -25,6 +25,18 @@ class Product(models.Model):
     def get_url(self):
         return reverse('product_detail', args=[self.category.slug, self.slug])
 
+    @property
+    def has_price(self):
+        """False when price is missing or zero (CSV/consult-only parts)."""
+        try:
+            return int(self.price or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    @property
+    def can_be_purchased(self):
+        return bool(self.is_available and self.has_price and int(self.stock or 0) > 0)
+
     def get_image_url(self):
         try:
             if self.images and 'pc-part-placeholder' not in self.images.name:

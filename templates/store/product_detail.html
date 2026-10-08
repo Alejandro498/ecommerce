@@ -110,7 +110,9 @@
               <hr>
               {% endif %}
 
-              {% if single_product.stock <= 0 %}
+              {% if not single_product.has_price %}
+              <h5 class="text-muted">Sin precio — no se puede comprar</h5>
+              {% elif single_product.stock <= 0 %}
               <h5>Producto fuera de stock</h5>
               {% else %}
 

@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from store.models import Product, Variation
 from .models import Cart, CartItem
 from django.core.exceptions import ObjectDoesNotExist
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 
@@ -41,8 +42,25 @@ def _variations_from_post(request, product):
     return product_variation
 
 
+def _remove_unpriced_cart_items(cart_items):
+    """Drop cart lines whose product has no sellable price. Returns (qs, removed_count)."""
+    if cart_items is None:
+        return cart_items, 0
+    bad_ids = [
+        item.id
+        for item in cart_items.select_related('product')
+        if not item.product.has_price
+    ]
+    if not bad_ids:
+        return cart_items, 0
+    CartItem.objects.filter(id__in=bad_ids).delete()
+    return cart_items.exclude(id__in=bad_ids), len(bad_ids)
+
+
 def _add_product_to_cart(request, product, product_variation=None):
     """Agrega 1 unidad del producto al carrito (usuario o sesion)."""
+    if not product.has_price:
+        return None
     product_variation = list(product_variation or [])
     current_user = request.user
 
@@ -92,7 +110,13 @@ def _add_product_to_cart(request, product, product_variation=None):
 
 
 def add_cart(request, product_id):
-    product = Product.objects.get(id=product_id)
+    product = get_object_or_404(Product, id=product_id)
+    if not product.has_price:
+        messages.error(
+            request,
+            'Este producto no tiene precio disponible y no se puede agregar al carrito.',
+        )
+        return redirect(product.get_url())
     _add_product_to_cart(request, product, _variations_from_post(request, product))
     return redirect('cart')
 
@@ -124,14 +148,21 @@ def add_build_cart(request):
         seen.add(product_id)
         ordered_ids.append(product_id)
 
-    products = Product.objects.filter(id__in=ordered_ids, is_available=True)
+    products = Product.objects.filter(id__in=ordered_ids, is_available=True, price__gt=0)
     by_id = {product.id: product for product in products}
+    skipped = 0
     for product_id in ordered_ids:
         product = by_id.get(product_id)
         if product is None:
+            skipped += 1
             continue
         _add_product_to_cart(request, product, [])
 
+    if skipped:
+        messages.warning(
+            request,
+            'Algunos componentes sin precio no se agregaron al carrito.',
+        )
     return redirect('cart')
 
 
@@ -184,21 +215,28 @@ def cart(request, total=0, quantity=0, cart_items=None):
             cart = Cart.objects.get(cart_id=_cart_id(request))
             cart_items = CartItem.objects.filter(cart=cart, is_active=True)
 
+        cart_items, removed = _remove_unpriced_cart_items(cart_items)
+        if removed:
+            messages.warning(
+                request,
+                'Se quitaron del carrito productos sin precio; no se pueden comprar.',
+            )
+
         for cart_item in cart_items:
             total += (cart_item.product.price * cart_item.quantity)
             quantity += cart_item.quantity
-        tax = (2*total)/100
+        tax = (2 * total) / 100
         grand_total = total + tax
 
     except ObjectDoesNotExist:
-        pass ## solo ignora la exception
+        pass  # solo ignora la exception
 
     context = {
         'total': total,
         'quantity': quantity,
         'cart_items': cart_items,
-        'tax' : tax,
-        'grand_total': grand_total
+        'tax': tax,
+        'grand_total': grand_total,
     }
 
     return render(request, 'store/cart.html', context)
@@ -209,30 +247,35 @@ def checkout(request, total=0, quantity=0, cart_items=None):
     tax = 0
     grand_total = 0
     try:
-
         if request.user.is_authenticated:
             cart_items = CartItem.objects.filter(user=request.user, is_active=True)
         else:
             cart = Cart.objects.get(cart_id=_cart_id(request))
             cart_items = CartItem.objects.filter(cart=cart, is_active=True)
 
-
+        cart_items, removed = _remove_unpriced_cart_items(cart_items)
+        if removed:
+            messages.warning(
+                request,
+                'Se quitaron del carrito productos sin precio; no se pueden comprar.',
+            )
+            return redirect('cart')
 
         for cart_item in cart_items:
             total += (cart_item.product.price * cart_item.quantity)
             quantity += cart_item.quantity
-        tax = (2*total)/100
+        tax = (2 * total) / 100
         grand_total = total + tax
 
     except ObjectDoesNotExist:
-        pass ## solo ignora la exception
+        pass  # solo ignora la exception
 
     context = {
         'total': total,
         'quantity': quantity,
         'cart_items': cart_items,
-        'tax' : tax,
-        'grand_total': grand_total
+        'tax': tax,
+        'grand_total': grand_total,
     }
 
     return render(request, 'store/checkout.html', context)
